@@ -74,7 +74,11 @@ export class Player {
 
     if (!this.inWater) {
       const wantsCrouch = input.isDown('ControlLeft') || input.isDown('ControlRight');
-      const shouldCrouch = wantsCrouch && this.onGround;
+      let shouldCrouch = wantsCrouch && this.onGround;
+      if (this.crouching && !shouldCrouch) {
+        const standBox = { x: this.x, y: this.y + this.h - PLAYER_H, w: this.w, h: PLAYER_H };
+        if (platforms.some((p) => aabbOverlap(standBox, p))) shouldCrouch = true;
+      }
       if (shouldCrouch !== this.crouching) {
         const newH = shouldCrouch ? PLAYER_CROUCH_H : PLAYER_H;
         this.y += this.h - newH;

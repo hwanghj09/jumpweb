@@ -19,13 +19,17 @@ import { playerSheet, enemySheet } from './sprites.js';
 import { spawnBurst, updateParticles, drawParticles } from './particles.js';
 import { music, MENU_TRACK, GAME_TRACK } from './audio.js';
 import { drawBackground } from './background.js';
+import { getCustomStages } from './customLevels.js';
 
 export class Game {
   constructor() {
     this.camera = new Camera();
     this.state = 'TITLE';
     this.stageIndex = 0;
-    this.cleared = STAGES.map(() => false);
+    this.stages = STAGES;
+    this.cleared = [];
+    this.stagePage = 0;
+    this.refreshStages();
     this.mouse = { x: -1, y: -1 };
     this.buttons = [];
     this.time = 0;
@@ -39,6 +43,18 @@ export class Game {
     this.levelW = 0;
     this.levelH = 0;
     this.particles = [];
+  }
+
+  refreshStages() {
+    this.stages = [...STAGES, ...getCustomStages()];
+    while (this.cleared.length < this.stages.length) this.cleared.push(false);
+  }
+
+  goToStageSelect() {
+    this.refreshStages();
+    this.stagePage = 0;
+    this.state = 'STAGE_SELECT';
+    music.switchTrack(MENU_TRACK);
   }
 
   setMouse(x, y) {
@@ -58,7 +74,8 @@ export class Game {
   }
 
   loadStage(i) {
-    const def = STAGES[i];
+    this.refreshStages();
+    const def = this.stages[i];
     this.stageIndex = i;
     this.platforms = def.platforms.map((p) => new Platform(p));
     this.cones = def.cones.map((c) => new Cone(c));
@@ -168,7 +185,7 @@ export class Game {
     for (const e of this.enemies) drawEnemySprite(ctx, e, enemySheet, this.camera);
     drawPlayerSprite(ctx, this.player, playerSheet, this.camera);
     drawParticles(ctx, this.particles, this.camera);
-    drawHUD(ctx, STAGES[this.stageIndex].hint, STAGES[this.stageIndex].name);
+    drawHUD(ctx, this.stages[this.stageIndex].hint, this.stages[this.stageIndex].name);
   }
 
   drawTitle(ctx) {
@@ -181,9 +198,9 @@ export class Game {
     ctx.font = '16px monospace';
     ctx.fillText('8-BIT PIXEL PLATFORMER', CANVAS_W / 2, 200);
     this.addButton(ctx, CANVAS_W / 2 - 100, 260, 200, 46, 'PLAY', () => this.loadStage(0));
-    this.addButton(ctx, CANVAS_W / 2 - 100, 320, 200, 46, 'STAGE SELECT', () => {
-      this.state = 'STAGE_SELECT';
-      music.switchTrack(MENU_TRACK);
+    this.addButton(ctx, CANVAS_W / 2 - 100, 320, 200, 46, 'STAGE SELECT', () => this.goToStageSelect());
+    this.addButton(ctx, CANVAS_W / 2 - 100, 380, 200, 46, '맵 에디터', () => {
+      window.location.href = 'editor.html';
     });
   }
 
@@ -196,26 +213,51 @@ export class Game {
     ctx.fillText('STAGE SELECT', CANVAS_W / 2, 80);
 
     const cols = 4;
-    const boxW = 90;
-    const boxH = 90;
-    const gap = 22;
+    const rows = 2;
+    const pageSize = cols * rows;
+    const totalPages = Math.max(1, Math.ceil(this.stages.length / pageSize));
+    this.stagePage = Math.max(0, Math.min(this.stagePage, totalPages - 1));
+
+    const boxW = 100;
+    const boxH = 100;
+    const gap = 26;
     const gridW = cols * boxW + (cols - 1) * gap;
     const startX = (CANVAS_W - gridW) / 2;
-    const startY = 130;
+    const startY = 140;
 
-    STAGES.forEach((s, i) => {
-      const unlocked = i === 0 || this.cleared[i - 1];
-      const col = i % cols;
-      const row = Math.floor(i / cols);
+    const pageStart = this.stagePage * pageSize;
+    const pageStages = this.stages.slice(pageStart, pageStart + pageSize);
+
+    pageStages.forEach((s, localI) => {
+      const i = pageStart + localI;
+      const unlocked = i === 0 || i >= STAGES.length || this.cleared[i - 1];
+      const col = localI % cols;
+      const row = Math.floor(localI / cols);
       const x = startX + col * (boxW + gap);
       const y = startY + row * (boxH + gap);
       const label = `${i + 1}` + (this.cleared[i] ? ' *' : '');
       this.addButton(ctx, x, y, boxW, boxH, label, unlocked ? () => this.loadStage(i) : () => {}, !unlocked);
     });
 
-    const rows = Math.ceil(STAGES.length / cols);
-    const backY = startY + rows * (boxH + gap) + 10;
-    this.addButton(ctx, CANVAS_W / 2 - 80, backY, 160, 40, 'BACK', () => {
+    const gridBottom = startY + rows * (boxH + gap) - gap;
+    if (totalPages > 1) {
+      ctx.fillStyle = '#111';
+      ctx.font = '16px monospace';
+      ctx.fillText(`PAGE ${this.stagePage + 1} / ${totalPages}`, CANVAS_W / 2, gridBottom + 30);
+    }
+
+    const navY = gridBottom + 46;
+    if (this.stagePage > 0) {
+      this.addButton(ctx, CANVAS_W / 2 - 260, navY, 100, 40, '< PREV', () => {
+        this.stagePage -= 1;
+      });
+    }
+    if (this.stagePage < totalPages - 1) {
+      this.addButton(ctx, CANVAS_W / 2 + 160, navY, 100, 40, 'NEXT >', () => {
+        this.stagePage += 1;
+      });
+    }
+    this.addButton(ctx, CANVAS_W / 2 - 70, navY, 140, 40, 'BACK', () => {
       this.state = 'TITLE';
       music.switchTrack(MENU_TRACK);
     });
@@ -236,10 +278,7 @@ export class Game {
     this.addButton(ctx, CANVAS_W / 2 - 110, 311, 220, 44, 'SETTINGS', () => {
       this.state = 'SETTINGS';
     });
-    this.addButton(ctx, CANVAS_W / 2 - 110, 364, 220, 44, 'STAGE SELECT', () => {
-      this.state = 'STAGE_SELECT';
-      music.switchTrack(MENU_TRACK);
-    });
+    this.addButton(ctx, CANVAS_W / 2 - 110, 364, 220, 44, 'STAGE SELECT', () => this.goToStageSelect());
   }
 
   drawSettings(ctx) {
@@ -282,21 +321,15 @@ export class Game {
     ctx.textBaseline = 'alphabetic';
     ctx.fillText('STAGE CLEAR!', CANVAS_W / 2, 180);
 
-    const isLast = this.stageIndex === STAGES.length - 1;
+    const isLast = this.stageIndex === this.stages.length - 1;
     if (isLast) {
       ctx.fillStyle = '#fff';
       ctx.font = '18px monospace';
       ctx.fillText('ALL STAGES CLEARED', CANVAS_W / 2, 220);
-      this.addButton(ctx, CANVAS_W / 2 - 110, 260, 220, 46, 'STAGE SELECT', () => {
-        this.state = 'STAGE_SELECT';
-        music.switchTrack(MENU_TRACK);
-      });
+      this.addButton(ctx, CANVAS_W / 2 - 110, 260, 220, 46, 'STAGE SELECT', () => this.goToStageSelect());
     } else {
       this.addButton(ctx, CANVAS_W / 2 - 110, 260, 220, 46, 'NEXT STAGE', () => this.loadStage(this.stageIndex + 1));
-      this.addButton(ctx, CANVAS_W / 2 - 110, 320, 220, 46, 'STAGE SELECT', () => {
-        this.state = 'STAGE_SELECT';
-        music.switchTrack(MENU_TRACK);
-      });
+      this.addButton(ctx, CANVAS_W / 2 - 110, 320, 220, 46, 'STAGE SELECT', () => this.goToStageSelect());
     }
   }
 }

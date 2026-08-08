@@ -95,9 +95,13 @@ export function drawEnemySprite(ctx, enemy, sheet, camera) {
 export function drawPlatform(ctx, p, camera) {
   const startX = Math.floor(p.x - camera.x);
   const startY = Math.floor(p.y - camera.y);
-  const cols = p.w / TILE;
-  const rows = p.h / TILE;
+  const cols = Math.ceil(p.w / TILE);
+  const rows = Math.ceil(p.h / TILE);
 
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(startX, startY, p.w, p.h);
+  ctx.clip();
   for (let c = 0; c < cols; c++) {
     for (let r = 0; r < rows; r++) {
       const tx = startX + c * TILE;
@@ -112,6 +116,7 @@ export function drawPlatform(ctx, p, camera) {
       ctx.fillRect(tx, ty, 4, TILE);
     }
   }
+  ctx.restore();
 
   if (p.moving) {
     const cx = startX + p.w / 2;
