@@ -8,19 +8,20 @@ function frameCycle(t, fps, frames) {
   return Math.floor(t * fps) % frames;
 }
 
-function drawFrame(ctx, sheet, row, frameIndex, cx, feetY, facing) {
+function drawFrame(ctx, sheet, row, frameIndex, cx, feetY, facing, heightScale = 1) {
   if (!sheet.ready) return;
   const sx = frameIndex * FRAME_W;
   const sy = row * FRAME_H;
-  const dy = feetY - DISPLAY_H;
+  const dh = DISPLAY_H * heightScale;
+  const dy = feetY - dh;
   if (facing < 0) {
     ctx.save();
     ctx.translate(cx, 0);
     ctx.scale(-1, 1);
-    ctx.drawImage(sheet, sx, sy, FRAME_W, FRAME_H, -DISPLAY_W / 2, dy, DISPLAY_W, DISPLAY_H);
+    ctx.drawImage(sheet, sx, sy, FRAME_W, FRAME_H, -DISPLAY_W / 2, dy, DISPLAY_W, dh);
     ctx.restore();
   } else {
-    ctx.drawImage(sheet, sx, sy, FRAME_W, FRAME_H, cx - DISPLAY_W / 2, dy, DISPLAY_W, DISPLAY_H);
+    ctx.drawImage(sheet, sx, sy, FRAME_W, FRAME_H, cx - DISPLAY_W / 2, dy, DISPLAY_W, dh);
   }
 }
 
@@ -32,11 +33,17 @@ export function drawPlayerSprite(ctx, player, sheet, camera) {
 
   let row = 1;
   let frameIndex = 0;
+  let heightScale = 1;
 
   switch (player.state) {
     case 'idle':
       row = 0;
       frameIndex = frameCycle(player.animTime, 3, 2);
+      break;
+    case 'crouch':
+      row = 0;
+      frameIndex = 0;
+      heightScale = 0.65;
       break;
     case 'walk':
       row = 1;
@@ -57,7 +64,7 @@ export function drawPlayerSprite(ctx, player, sheet, camera) {
       break;
     }
   }
-  drawFrame(ctx, sheet, row, frameIndex, cx, feetY, player.facing);
+  drawFrame(ctx, sheet, row, frameIndex, cx, feetY, player.facing, heightScale);
 }
 
 export function drawEnemySprite(ctx, enemy, sheet, camera) {
@@ -83,11 +90,6 @@ export function drawEnemySprite(ctx, enemy, sheet, camera) {
     frameIndex = frameCycle(enemy.animTime, 12, 4);
   }
   drawFrame(ctx, sheet, row, frameIndex, cx, feetY, enemy.facing);
-}
-
-export function clearBackground(ctx, w, h) {
-  ctx.fillStyle = '#bfe6ff';
-  ctx.fillRect(0, 0, w, h);
 }
 
 export function drawPlatform(ctx, p, camera) {

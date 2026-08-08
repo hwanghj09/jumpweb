@@ -11,6 +11,8 @@ import {
   JAB_RANGE,
   PLAYER_W,
   PLAYER_H,
+  PLAYER_CROUCH_H,
+  CROUCH_SPEED,
   RESPAWN_INVULN,
 } from './constants.js';
 import { moveAndCollide, aabbOverlap } from './collision.js';
@@ -37,6 +39,9 @@ export class Player {
     this.ridingPlatform = null;
     this.animTime = 0;
     this.running = false;
+    this.crouching = false;
+    this.justJumped = false;
+    this.justJabbed = false;
   }
 
   respawn() {
@@ -51,13 +56,24 @@ export class Player {
   }
 
   update(dt, input, platforms, enemies) {
+    this.justJumped = false;
+    this.justJabbed = false;
     if (this.invuln > 0) this.invuln -= dt;
+
+    const wantsCrouch = input.isDown('ControlLeft') || input.isDown('ControlRight');
+    const shouldCrouch = wantsCrouch && this.onGround;
+    if (shouldCrouch !== this.crouching) {
+      const newH = shouldCrouch ? PLAYER_CROUCH_H : PLAYER_H;
+      this.y += this.h - newH;
+      this.h = newH;
+      this.crouching = shouldCrouch;
+    }
 
     let dir = 0;
     if (input.isDown('ArrowLeft') || input.isDown('KeyA')) dir -= 1;
     if (input.isDown('ArrowRight') || input.isDown('KeyD')) dir += 1;
-    this.running = input.isDown('ShiftLeft') || input.isDown('ShiftRight');
-    const maxSpeed = this.running ? RUN_SPEED : WALK_SPEED;
+    this.running = !this.crouching && (input.isDown('ShiftLeft') || input.isDown('ShiftRight'));
+    const maxSpeed = this.crouching ? CROUCH_SPEED : this.running ? RUN_SPEED : WALK_SPEED;
     const accel = this.onGround ? ACCEL_GROUND : ACCEL_AIR;
 
     if (dir !== 0) {
@@ -70,13 +86,15 @@ export class Player {
       else this.vx -= Math.sign(this.vx) * fric;
     }
 
-    if (input.pressed('Space') && this.onGround) {
+    if (input.pressed('Space') && this.onGround && !this.crouching) {
       this.vy = -JUMP_VELOCITY;
       this.onGround = false;
+      this.justJumped = true;
     }
 
     if (input.pressed('KeyX') && this.jabTimer <= 0) {
       this.jabTimer = JAB_DURATION;
+      this.justJabbed = true;
     }
     if (this.jabTimer > 0) {
       this.jabTimer -= dt;
@@ -100,6 +118,7 @@ export class Player {
 
     if (!this.onGround) this.state = 'jump';
     else if (this.jabTimer > 0) this.state = 'jab';
+    else if (this.crouching) this.state = 'crouch';
     else if (Math.abs(this.vx) > 5) this.state = this.running ? 'run' : 'walk';
     else this.state = 'idle';
     this.animTime += dt;

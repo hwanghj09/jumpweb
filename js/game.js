@@ -6,7 +6,6 @@ import { Platform, Cone } from './world.js';
 import { STAGES } from './levels.js';
 import { aabbOverlap } from './collision.js';
 import {
-  clearBackground,
   drawPlatform,
   drawCone,
   drawGoal,
@@ -16,6 +15,9 @@ import {
   drawButton,
 } from './renderer.js';
 import { playerSheet, enemySheet } from './sprites.js';
+import { spawnBurst, updateParticles, drawParticles } from './particles.js';
+import { music, MENU_TRACK, GAME_TRACK } from './audio.js';
+import { drawBackground } from './background.js';
 
 export class Game {
   constructor() {
@@ -34,6 +36,7 @@ export class Game {
     this.goal = null;
     this.levelW = 0;
     this.levelH = 0;
+    this.particles = [];
   }
 
   setMouse(x, y) {
@@ -45,6 +48,7 @@ export class Game {
     for (const b of this.buttons) {
       if (b.disabled) continue;
       if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
+        music.playClickSfx();
         b.action();
         return;
       }
@@ -62,10 +66,16 @@ export class Game {
     this.levelW = def.width;
     this.levelH = def.height;
     this.camera.snap(this.player, this.levelW, this.levelH);
+    this.particles = [];
     this.state = 'PLAYING';
+    music.switchTrack(GAME_TRACK);
   }
 
   respawnPlayer() {
+    const cx = this.player.x + this.player.w / 2;
+    const cy = this.player.y + this.player.h / 2;
+    spawnBurst(this.particles, cx, cy);
+    music.playDeathSfx();
     this.player.respawn();
     this.camera.snap(this.player, this.levelW, this.levelH);
   }
@@ -81,7 +91,10 @@ export class Game {
 
       for (const p of this.platforms) p.update(dt, this.time);
       this.player.update(dt, input, this.platforms, this.enemies);
+      if (this.player.justJumped) music.playJumpSfx();
+      if (this.player.justJabbed) music.playJabSfx();
       for (const e of this.enemies) e.update(dt, this.player, this.platforms);
+      updateParticles(this.particles, dt);
 
       if (this.player.invuln <= 0) {
         for (const c of this.cones) {
@@ -105,12 +118,15 @@ export class Game {
       if (aabbOverlap(this.player, this.goal)) {
         this.cleared[this.stageIndex] = true;
         this.state = 'STAGE_CLEAR';
+        music.playClearSfx();
         return;
       }
 
       this.camera.follow(this.player, this.levelW, this.levelH, dt);
     } else if (this.state === 'PAUSED') {
       if (input.pressed('Escape')) this.state = 'PLAYING';
+    } else if (this.state === 'SETTINGS') {
+      if (input.pressed('Escape')) this.state = 'PAUSED';
     }
   }
 
@@ -135,21 +151,23 @@ export class Game {
       this.drawGame(ctx);
       if (this.state === 'PAUSED') this.drawPause(ctx);
       else if (this.state === 'STAGE_CLEAR') this.drawStageClear(ctx);
+      else if (this.state === 'SETTINGS') this.drawSettings(ctx);
     }
   }
 
   drawGame(ctx) {
-    clearBackground(ctx, CANVAS_W, CANVAS_H);
+    drawBackground(ctx, CANVAS_W, CANVAS_H, this.time, this.camera.x);
     for (const p of this.platforms) drawPlatform(ctx, p, this.camera);
     for (const c of this.cones) drawCone(ctx, c, this.camera);
     drawGoal(ctx, this.goal, this.camera);
     for (const e of this.enemies) drawEnemySprite(ctx, e, enemySheet, this.camera);
     drawPlayerSprite(ctx, this.player, playerSheet, this.camera);
+    drawParticles(ctx, this.particles, this.camera);
     drawHUD(ctx, STAGES[this.stageIndex].hint, STAGES[this.stageIndex].name);
   }
 
   drawTitle(ctx) {
-    clearBackground(ctx, CANVAS_W, CANVAS_H);
+    drawBackground(ctx, CANVAS_W, CANVAS_H, this.time);
     ctx.fillStyle = '#111';
     ctx.font = 'bold 48px monospace';
     ctx.textAlign = 'center';
@@ -160,29 +178,41 @@ export class Game {
     this.addButton(ctx, CANVAS_W / 2 - 100, 260, 200, 46, 'PLAY', () => this.loadStage(0));
     this.addButton(ctx, CANVAS_W / 2 - 100, 320, 200, 46, 'STAGE SELECT', () => {
       this.state = 'STAGE_SELECT';
+      music.switchTrack(MENU_TRACK);
     });
   }
 
   drawStageSelect(ctx) {
-    clearBackground(ctx, CANVAS_W, CANVAS_H);
+    drawBackground(ctx, CANVAS_W, CANVAS_H, this.time);
     ctx.fillStyle = '#111';
     ctx.font = 'bold 28px monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
     ctx.fillText('STAGE SELECT', CANVAS_W / 2, 80);
 
+    const cols = 4;
+    const boxW = 100;
+    const boxH = 100;
+    const gap = 30;
+    const gridW = cols * boxW + (cols - 1) * gap;
+    const startX = (CANVAS_W - gridW) / 2;
+    const startY = 150;
+
     STAGES.forEach((s, i) => {
       const unlocked = i === 0 || this.cleared[i - 1];
-      const x = 100 + i * 155;
-      const y = 200;
-      const w = 120;
-      const h = 120;
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const x = startX + col * (boxW + gap);
+      const y = startY + row * (boxH + gap);
       const label = `${i + 1}` + (this.cleared[i] ? ' *' : '');
-      this.addButton(ctx, x, y, w, h, label, unlocked ? () => this.loadStage(i) : () => {}, !unlocked);
+      this.addButton(ctx, x, y, boxW, boxH, label, unlocked ? () => this.loadStage(i) : () => {}, !unlocked);
     });
 
-    this.addButton(ctx, CANVAS_W / 2 - 80, 380, 160, 40, 'BACK', () => {
+    const rows = Math.ceil(STAGES.length / cols);
+    const backY = startY + rows * (boxH + gap) + 10;
+    this.addButton(ctx, CANVAS_W / 2 - 80, backY, 160, 40, 'BACK', () => {
       this.state = 'TITLE';
+      music.switchTrack(MENU_TRACK);
     });
   }
 
@@ -193,13 +223,48 @@ export class Game {
     ctx.font = 'bold 32px monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
-    ctx.fillText('PAUSED', CANVAS_W / 2, 160);
-    this.addButton(ctx, CANVAS_W / 2 - 110, 220, 220, 46, 'RESUME', () => {
+    ctx.fillText('PAUSED', CANVAS_W / 2, 150);
+    this.addButton(ctx, CANVAS_W / 2 - 110, 205, 220, 44, 'RESUME', () => {
       this.state = 'PLAYING';
     });
-    this.addButton(ctx, CANVAS_W / 2 - 110, 280, 220, 46, 'RESTART STAGE', () => this.loadStage(this.stageIndex));
-    this.addButton(ctx, CANVAS_W / 2 - 110, 340, 220, 46, 'STAGE SELECT', () => {
+    this.addButton(ctx, CANVAS_W / 2 - 110, 258, 220, 44, 'RESTART STAGE', () => this.loadStage(this.stageIndex));
+    this.addButton(ctx, CANVAS_W / 2 - 110, 311, 220, 44, 'SETTINGS', () => {
+      this.state = 'SETTINGS';
+    });
+    this.addButton(ctx, CANVAS_W / 2 - 110, 364, 220, 44, 'STAGE SELECT', () => {
       this.state = 'STAGE_SELECT';
+      music.switchTrack(MENU_TRACK);
+    });
+  }
+
+  drawSettings(ctx) {
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 32px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText('SETTINGS', CANVAS_W / 2, 150);
+
+    ctx.font = '16px monospace';
+    ctx.fillText(`VOLUME: ${Math.round(music.volume * 100)}%`, CANVAS_W / 2, 205);
+
+    const barX = CANVAS_W / 2 - 110;
+    const barY = 222;
+    const barW = 220;
+    const barH = 16;
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(barX, barY, barW, barH);
+    ctx.fillStyle = '#3ecf5b';
+    ctx.fillRect(barX + 2, barY + 2, (barW - 4) * music.volume, barH - 4);
+
+    this.addButton(ctx, CANVAS_W / 2 - 160, 258, 60, 44, '-', () => music.setVolume(music.volume - 0.1));
+    this.addButton(ctx, CANVAS_W / 2 - 90, 258, 180, 44, music.muted ? 'UNMUTE' : 'MUTE', () => music.toggleMute());
+    this.addButton(ctx, CANVAS_W / 2 + 100, 258, 60, 44, '+', () => music.setVolume(music.volume + 0.1));
+
+    this.addButton(ctx, CANVAS_W / 2 - 110, 330, 220, 46, 'BACK', () => {
+      this.state = 'PAUSED';
     });
   }
 
@@ -219,11 +284,13 @@ export class Game {
       ctx.fillText('ALL STAGES CLEARED', CANVAS_W / 2, 220);
       this.addButton(ctx, CANVAS_W / 2 - 110, 260, 220, 46, 'STAGE SELECT', () => {
         this.state = 'STAGE_SELECT';
+        music.switchTrack(MENU_TRACK);
       });
     } else {
       this.addButton(ctx, CANVAS_W / 2 - 110, 260, 220, 46, 'NEXT STAGE', () => this.loadStage(this.stageIndex + 1));
       this.addButton(ctx, CANVAS_W / 2 - 110, 320, 220, 46, 'STAGE SELECT', () => {
         this.state = 'STAGE_SELECT';
+        music.switchTrack(MENU_TRACK);
       });
     }
   }

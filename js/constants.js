@@ -19,6 +19,8 @@ export const FALL_DEATH_MARGIN = 240;
 
 export const PLAYER_W = 18;
 export const PLAYER_H = 30;
+export const PLAYER_CROUCH_H = 18;
+export const CROUCH_SPEED = 80;
 export const ENEMY_W = 18;
 export const ENEMY_H = 30;
 

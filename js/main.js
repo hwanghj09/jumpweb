@@ -1,6 +1,15 @@
 import { Game } from './game.js';
 import { Input } from './input.js';
 import { CANVAS_W, CANVAS_H } from './constants.js';
+import { music, MENU_TRACK } from './audio.js';
+
+function tryStartMusic() {
+  if (!music.started) music.start(MENU_TRACK);
+  window.removeEventListener('keydown', tryStartMusic);
+  window.removeEventListener('click', tryStartMusic);
+}
+window.addEventListener('keydown', tryStartMusic);
+window.addEventListener('click', tryStartMusic);
 
 const canvas = document.getElementById('game');
 canvas.width = CANVAS_W;
