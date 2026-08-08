@@ -24,6 +24,11 @@ export const CROUCH_SPEED = 80;
 export const ENEMY_W = 18;
 export const ENEMY_H = 30;
 
+export const WATER_GRAVITY_MULT = 0.35;
+export const WATER_MAX_FALL_MULT = 0.4;
+export const WATER_SPEED = 100;
+export const SWIM_IMPULSE = 360;
+
 export const ENEMY_PATROL_SPEED = 90;
 export const ENEMY_CHASE_MULT = 1.5;
 export const ENEMY_SIGHT_RANGE = 260;

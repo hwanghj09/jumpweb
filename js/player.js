@@ -14,6 +14,10 @@ import {
   PLAYER_CROUCH_H,
   CROUCH_SPEED,
   RESPAWN_INVULN,
+  WATER_GRAVITY_MULT,
+  WATER_MAX_FALL_MULT,
+  WATER_SPEED,
+  SWIM_IMPULSE,
 } from './constants.js';
 import { moveAndCollide, aabbOverlap } from './collision.js';
 
@@ -40,8 +44,10 @@ export class Player {
     this.animTime = 0;
     this.running = false;
     this.crouching = false;
+    this.inWater = false;
     this.justJumped = false;
     this.justJabbed = false;
+    this.justEnteredWater = false;
   }
 
   respawn() {
@@ -55,25 +61,33 @@ export class Player {
       : { x: this.x - JAB_RANGE, y: this.y + 6, w: JAB_RANGE, h: hh };
   }
 
-  update(dt, input, platforms, enemies) {
+  update(dt, input, platforms, enemies, water = []) {
     this.justJumped = false;
     this.justJabbed = false;
+    this.justEnteredWater = false;
     if (this.invuln > 0) this.invuln -= dt;
 
-    const wantsCrouch = input.isDown('ControlLeft') || input.isDown('ControlRight');
-    const shouldCrouch = wantsCrouch && this.onGround;
-    if (shouldCrouch !== this.crouching) {
-      const newH = shouldCrouch ? PLAYER_CROUCH_H : PLAYER_H;
-      this.y += this.h - newH;
-      this.h = newH;
-      this.crouching = shouldCrouch;
+    const wasInWater = this.inWater;
+    this.inWater = water.some((w) => aabbOverlap(this, w));
+    if (this.inWater && !wasInWater) this.justEnteredWater = true;
+    if (this.inWater) this.crouching = false;
+
+    if (!this.inWater) {
+      const wantsCrouch = input.isDown('ControlLeft') || input.isDown('ControlRight');
+      const shouldCrouch = wantsCrouch && this.onGround;
+      if (shouldCrouch !== this.crouching) {
+        const newH = shouldCrouch ? PLAYER_CROUCH_H : PLAYER_H;
+        this.y += this.h - newH;
+        this.h = newH;
+        this.crouching = shouldCrouch;
+      }
     }
 
     let dir = 0;
     if (input.isDown('ArrowLeft') || input.isDown('KeyA')) dir -= 1;
     if (input.isDown('ArrowRight') || input.isDown('KeyD')) dir += 1;
-    this.running = !this.crouching && (input.isDown('ShiftLeft') || input.isDown('ShiftRight'));
-    const maxSpeed = this.crouching ? CROUCH_SPEED : this.running ? RUN_SPEED : WALK_SPEED;
+    this.running = !this.crouching && !this.inWater && (input.isDown('ShiftLeft') || input.isDown('ShiftRight'));
+    const maxSpeed = this.inWater ? WATER_SPEED : this.crouching ? CROUCH_SPEED : this.running ? RUN_SPEED : WALK_SPEED;
     const accel = this.onGround ? ACCEL_GROUND : ACCEL_AIR;
 
     if (dir !== 0) {
@@ -86,10 +100,16 @@ export class Player {
       else this.vx -= Math.sign(this.vx) * fric;
     }
 
-    if (input.pressed('Space') && this.onGround && !this.crouching) {
-      this.vy = -JUMP_VELOCITY;
-      this.onGround = false;
-      this.justJumped = true;
+    if (input.pressed('Space')) {
+      if (this.inWater) {
+        this.vy = -SWIM_IMPULSE;
+        this.onGround = false;
+        this.justJumped = true;
+      } else if (this.onGround && !this.crouching) {
+        this.vy = -JUMP_VELOCITY;
+        this.onGround = false;
+        this.justJumped = true;
+      }
     }
 
     if (input.pressed('KeyX') && this.jabTimer <= 0) {
@@ -106,8 +126,10 @@ export class Player {
       }
     }
 
-    this.vy += GRAVITY * dt;
-    if (this.vy > MAX_FALL_SPEED) this.vy = MAX_FALL_SPEED;
+    const gravity = this.inWater ? GRAVITY * WATER_GRAVITY_MULT : GRAVITY;
+    const maxFall = this.inWater ? MAX_FALL_SPEED * WATER_MAX_FALL_MULT : MAX_FALL_SPEED;
+    this.vy += gravity * dt;
+    if (this.vy > maxFall) this.vy = maxFall;
 
     if (this.ridingPlatform) {
       this.x += this.ridingPlatform.dx;
@@ -116,7 +138,8 @@ export class Player {
 
     moveAndCollide(this, platforms, dt);
 
-    if (!this.onGround) this.state = 'jump';
+    if (this.inWater) this.state = 'jump';
+    else if (!this.onGround) this.state = 'jump';
     else if (this.jabTimer > 0) this.state = 'jab';
     else if (this.crouching) this.state = 'crouch';
     else if (Math.abs(this.vx) > 5) this.state = this.running ? 'run' : 'walk';

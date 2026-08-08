@@ -233,6 +233,35 @@ class ChipAudio {
     });
   }
 
+  playSplashSfx() {
+    this.ensureContext();
+    const t = this.ctx.currentTime;
+
+    const osc = this.ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(500, t);
+    osc.frequency.exponentialRampToValueAtTime(120, t + 0.18);
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0.18, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
+    osc.connect(g);
+    g.connect(this.master);
+    osc.start(t);
+    osc.stop(t + 0.22);
+
+    const buf = this.makeNoiseBuffer(0.15);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] *= 1 - i / d.length;
+    const src = this.ctx.createBufferSource();
+    src.buffer = buf;
+    const ng = this.ctx.createGain();
+    ng.gain.setValueAtTime(0.12, t);
+    ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.15);
+    src.connect(ng);
+    ng.connect(this.master);
+    src.start(t);
+  }
+
   playClickSfx() {
     this.ensureContext();
     const t = this.ctx.currentTime;

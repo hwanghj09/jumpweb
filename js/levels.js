@@ -107,8 +107,8 @@ export const STAGES = [
     goal: { x: 28 * TILE, y: 14 * TILE, w: TILE, h: TILE },
     platforms: [
       { x: 0, y: 15 * TILE, w: 30 * TILE, h: TILE },
-      { x: 8 * TILE, y: ceilingAbove(15), w: 6 * TILE, h: TUNNEL_THICKNESS },
-      { x: 18 * TILE, y: ceilingAbove(15), w: 6 * TILE, h: TUNNEL_THICKNESS },
+      { x: 8 * TILE, y: 0, w: 6 * TILE, h: 15 * TILE - TUNNEL_CLEARANCE },
+      { x: 18 * TILE, y: 0, w: 6 * TILE, h: 15 * TILE - TUNNEL_CLEARANCE },
     ],
     cones: [{ x: 16 * TILE, y: onTop(15) }],
     enemies: [],
@@ -166,5 +166,25 @@ export const STAGES = [
       { x: 12 * TILE, y: 29 * TILE - 30, patrolMinX: 10 * TILE, patrolMaxX: 15 * TILE },
       { x: 19 * TILE, y: 17 * TILE - 30, patrolMinX: 17 * TILE, patrolMaxX: 23 * TILE },
     ],
+  },
+  {
+    name: 'STAGE 9 - 호수 건너기',
+    hint: HINT,
+    width: 26 * TILE,
+    height: 20 * TILE,
+    spawn: { x: 1 * TILE, y: 11 * TILE },
+    goal: { x: 23 * TILE, y: 11 * TILE, w: TILE, h: TILE },
+    platforms: [
+      { x: 0, y: 12 * TILE, w: 6 * TILE, h: TILE },
+      { x: 20 * TILE, y: 12 * TILE, w: 6 * TILE, h: TILE },
+      { x: 6 * TILE, y: 18 * TILE, w: 14 * TILE, h: TILE },
+      { x: 12 * TILE, y: 10 * TILE, w: 2 * TILE, h: TILE },
+    ],
+    water: [{ x: 6 * TILE, y: 12 * TILE, w: 14 * TILE, h: 6 * TILE }],
+    cones: [
+      { x: 10 * TILE, y: onTop(18) },
+      { x: 16 * TILE, y: onTop(18) },
+    ],
+    enemies: [],
   },
 ];

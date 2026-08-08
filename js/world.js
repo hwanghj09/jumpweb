@@ -31,3 +31,12 @@ export class Cone {
     this.h = 28;
   }
 }
+
+export class Water {
+  constructor(def) {
+    this.x = def.x;
+    this.y = def.y;
+    this.w = def.w;
+    this.h = def.h;
+  }
+}

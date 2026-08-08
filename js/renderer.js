@@ -148,6 +148,15 @@ export function drawCone(ctx, cone, camera) {
   ctx.fillRect(x + 4, y + cone.h * 0.55, cone.w - 8, 4);
 }
 
+export function drawWater(ctx, water, camera) {
+  const x = Math.floor(water.x - camera.x);
+  const y = Math.floor(water.y - camera.y);
+  ctx.fillStyle = 'rgba(40,110,200,0.45)';
+  ctx.fillRect(x, y, water.w, water.h);
+  ctx.fillStyle = 'rgba(190,225,255,0.65)';
+  ctx.fillRect(x, y, water.w, 4);
+}
+
 export function drawGoal(ctx, goal, camera) {
   const x = Math.floor(goal.x - camera.x);
   const y = Math.floor(goal.y - camera.y);

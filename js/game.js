@@ -2,12 +2,13 @@ import { CANVAS_W, CANVAS_H, FALL_DEATH_MARGIN } from './constants.js';
 import { Camera } from './camera.js';
 import { Player } from './player.js';
 import { Enemy } from './enemy.js';
-import { Platform, Cone } from './world.js';
+import { Platform, Cone, Water } from './world.js';
 import { STAGES } from './levels.js';
 import { aabbOverlap } from './collision.js';
 import {
   drawPlatform,
   drawCone,
+  drawWater,
   drawGoal,
   drawPlayerSprite,
   drawEnemySprite,
@@ -33,6 +34,7 @@ export class Game {
     this.platforms = [];
     this.cones = [];
     this.enemies = [];
+    this.water = [];
     this.goal = null;
     this.levelW = 0;
     this.levelH = 0;
@@ -61,6 +63,7 @@ export class Game {
     this.platforms = def.platforms.map((p) => new Platform(p));
     this.cones = def.cones.map((c) => new Cone(c));
     this.enemies = def.enemies.map((e) => new Enemy(e));
+    this.water = (def.water || []).map((w) => new Water(w));
     this.player = new Player(def.spawn.x, def.spawn.y);
     this.goal = def.goal;
     this.levelW = def.width;
@@ -90,9 +93,10 @@ export class Game {
       }
 
       for (const p of this.platforms) p.update(dt, this.time);
-      this.player.update(dt, input, this.platforms, this.enemies);
+      this.player.update(dt, input, this.platforms, this.enemies, this.water);
       if (this.player.justJumped) music.playJumpSfx();
       if (this.player.justJabbed) music.playJabSfx();
+      if (this.player.justEnteredWater) music.playSplashSfx();
       for (const e of this.enemies) e.update(dt, this.player, this.platforms);
       updateParticles(this.particles, dt);
 
@@ -159,6 +163,7 @@ export class Game {
     drawBackground(ctx, CANVAS_W, CANVAS_H, this.time, this.camera.x);
     for (const p of this.platforms) drawPlatform(ctx, p, this.camera);
     for (const c of this.cones) drawCone(ctx, c, this.camera);
+    for (const w of this.water) drawWater(ctx, w, this.camera);
     drawGoal(ctx, this.goal, this.camera);
     for (const e of this.enemies) drawEnemySprite(ctx, e, enemySheet, this.camera);
     drawPlayerSprite(ctx, this.player, playerSheet, this.camera);
@@ -191,12 +196,12 @@ export class Game {
     ctx.fillText('STAGE SELECT', CANVAS_W / 2, 80);
 
     const cols = 4;
-    const boxW = 100;
-    const boxH = 100;
-    const gap = 30;
+    const boxW = 90;
+    const boxH = 90;
+    const gap = 22;
     const gridW = cols * boxW + (cols - 1) * gap;
     const startX = (CANVAS_W - gridW) / 2;
-    const startY = 150;
+    const startY = 130;
 
     STAGES.forEach((s, i) => {
       const unlocked = i === 0 || this.cleared[i - 1];
