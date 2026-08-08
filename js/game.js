@@ -20,6 +20,7 @@ import { spawnBurst, updateParticles, drawParticles } from './particles.js';
 import { music, MENU_TRACK, GAME_TRACK } from './audio.js';
 import { drawBackground } from './background.js';
 import { getCustomStages } from './customLevels.js';
+import { getCachedFolderStages, refreshFolderStages } from './customFolder.js';
 
 export class Game {
   constructor() {
@@ -30,6 +31,7 @@ export class Game {
     this.cleared = [];
     this.stagePage = 0;
     this.refreshStages();
+    refreshFolderStages().then(() => this.refreshStages());
     this.mouse = { x: -1, y: -1 };
     this.buttons = [];
     this.time = 0;
@@ -46,12 +48,13 @@ export class Game {
   }
 
   refreshStages() {
-    this.stages = [...STAGES, ...getCustomStages()];
+    this.stages = [...STAGES, ...getCustomStages(), ...getCachedFolderStages()];
     while (this.cleared.length < this.stages.length) this.cleared.push(false);
   }
 
   goToStageSelect() {
     this.refreshStages();
+    refreshFolderStages().then(() => this.refreshStages());
     this.stagePage = 0;
     this.state = 'STAGE_SELECT';
     music.switchTrack(MENU_TRACK);
@@ -100,12 +103,24 @@ export class Game {
     this.camera.snap(this.player, this.levelW, this.levelH);
   }
 
+  cheatNextStage() {
+    this.cleared[this.stageIndex] = true;
+    music.playClearSfx();
+    const next = this.stageIndex + 1;
+    if (next < this.stages.length) this.loadStage(next);
+    else this.goToStageSelect();
+  }
+
   update(dt, input) {
     this.time += dt;
 
     if (this.state === 'PLAYING') {
       if (input.pressed('Escape')) {
         this.state = 'PAUSED';
+        return;
+      }
+      if (input.pressed('KeyN')) {
+        this.cheatNextStage();
         return;
       }
 

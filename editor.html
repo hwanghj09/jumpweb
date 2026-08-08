@@ -198,7 +198,11 @@
 
     <section>
       <h2>도구</h2>
-      <div class="tool-grid">
+      <div class="row">
+        <button id="btn-undo" title="Ctrl+Z">↶ 되돌리기</button>
+        <button id="btn-redo" title="Ctrl+Y">↷ 다시 실행</button>
+      </div>
+      <div class="tool-grid" style="margin-top:8px;">
         <button class="tool-btn active" data-tool="select">선택/이동</button>
         <button class="tool-btn" data-tool="erase">지우개</button>
         <button class="tool-btn" data-tool="platform">발판</button>
@@ -219,6 +223,10 @@
       <div class="legend hint">
         발판/물/움직이는 발판은 드래그로 사각형을 그립니다. 원뿔/적/스폰/골은 클릭 한 번으로 배치합니다.
         선택 도구로 오브젝트를 드래그해 옮길 수 있고, Delete 키나 지우개로 삭제할 수 있습니다 (스폰/골 제외).
+      </div>
+      <div class="legend hint">
+        단축키: 숫자 1~9 도구 전환 · Ctrl+Z 되돌리기 · Ctrl+Y(또는 Ctrl+Shift+Z) 다시 실행 · Ctrl+C/V 복사·붙여넣기 · Ctrl+D 복제 ·
+        방향키로 선택한 오브젝트 1타일 이동 · Esc 선택 취소/드래그 취소 · Ctrl+S 저장.
       </div>
     </section>
 
@@ -249,6 +257,9 @@
           <button id="btn-download-js">.js 다운로드</button>
           <button id="btn-download-json">.json 다운로드</button>
         </div>
+      </div>
+      <div class="legend hint">
+        .js/.json으로 다운로드한 파일을 프로젝트의 <b>custom-stages</b> 폴더에 넣으면, 게임이 스테이지 선택 화면을 열 때마다 폴더를 확인해서 자동으로 스테이지를 추가합니다. 코드 생성은 levels.js에 직접 붙여넣을 때 사용하세요.
       </div>
       <textarea id="export-code" readonly placeholder="'코드 생성'을 누르면 여기에 levels.js STAGES 배열에 붙여넣을 수 있는 코드가 표시됩니다."></textarea>
       <label>JSON 파일 불러오기</label>

@@ -34,6 +34,11 @@ let dragCurrentCell = null;
 let mouseCell = { col: 0, row: 0 };
 let statusTimer = null;
 let movingAxis = 'x';
+let undoStack = [];
+let redoStack = [];
+let moveDragSnapshotted = false;
+let clipboard = null;
+const MAX_UNDO = 50;
 
 const canvas = document.getElementById('editor-canvas');
 const ctx = canvas.getContext('2d');
@@ -131,14 +136,146 @@ function isSelected(kind, index) {
   return !!selected && selected.kind === kind && selected.index === index;
 }
 
+function snapshotStage() {
+  return JSON.stringify(stage);
+}
+
+function pushUndo() {
+  undoStack.push(snapshotStage());
+  if (undoStack.length > MAX_UNDO) undoStack.shift();
+  redoStack = [];
+}
+
+function restoreSnapshot(json) {
+  stage = JSON.parse(json);
+  if (!stage.water) stage.water = [];
+  selected = null;
+  syncMetaInputs();
+  resizeCanvas();
+  renderPropPanel();
+  render();
+}
+
+function undo() {
+  if (!undoStack.length) {
+    setStatus('되돌릴 작업이 없습니다.');
+    return;
+  }
+  redoStack.push(snapshotStage());
+  restoreSnapshot(undoStack.pop());
+  setStatus('실행 취소했습니다.');
+}
+
+function redo() {
+  if (!redoStack.length) {
+    setStatus('다시 실행할 작업이 없습니다.');
+    return;
+  }
+  undoStack.push(snapshotStage());
+  restoreSnapshot(redoStack.pop());
+  setStatus('다시 실행했습니다.');
+}
+
 function deleteSelected() {
   if (!selected) return;
   if (selected.kind === 'goal' || selected.kind === 'spawn') {
     setStatus('스폰/골은 삭제할 수 없습니다.');
     return;
   }
+  pushUndo();
   stage[KIND_TO_ARRAY[selected.kind]].splice(selected.index, 1);
   selected = null;
+  renderPropPanel();
+  render();
+}
+
+function selectedObjectData() {
+  if (!selected) return null;
+  const { kind, index } = selected;
+  if (kind === 'goal' || kind === 'spawn') return null;
+  const obj = kind === 'platform' || kind === 'water' ? stage[KIND_TO_ARRAY[kind]][index] : kind === 'cone' ? stage.cones[index] : stage.enemies[index];
+  return { kind, data: clone(obj) };
+}
+
+function addFromClipboardData({ kind, data }, { atMouse = false } = {}) {
+  let x;
+  let y;
+  if (atMouse) {
+    x = mouseCell.col * TILE;
+    y = kind === 'cone' ? mouseCell.row * TILE - CONE_H : kind === 'enemy' ? mouseCell.row * TILE - ENEMY_H : mouseCell.row * TILE;
+  } else {
+    x = data.x + TILE;
+    y = data.y;
+  }
+  if (kind === 'platform' || kind === 'water') {
+    stage[KIND_TO_ARRAY[kind]].push({ ...clone(data), x, y });
+    selected = { kind, index: stage[KIND_TO_ARRAY[kind]].length - 1 };
+  } else if (kind === 'cone') {
+    stage.cones.push({ x, y });
+    selected = { kind, index: stage.cones.length - 1 };
+  } else if (kind === 'enemy') {
+    const dx = x - data.x;
+    const patrolMinX = Math.max(0, data.patrolMinX + dx);
+    const patrolMaxX = patrolMinX + (data.patrolMaxX - data.patrolMinX);
+    stage.enemies.push({ x, y, patrolMinX, patrolMaxX });
+    selected = { kind, index: stage.enemies.length - 1 };
+  }
+}
+
+function copySelected() {
+  const picked = selectedObjectData();
+  if (!picked) {
+    setStatus(selected ? '스폰/골은 복사할 수 없습니다.' : '복사할 오브젝트를 먼저 선택하세요.');
+    return;
+  }
+  clipboard = picked;
+  setStatus('복사했습니다. Ctrl+V로 붙여넣으세요.');
+}
+
+function pasteClipboard() {
+  if (!clipboard) {
+    setStatus('붙여넣을 내용이 없습니다.');
+    return;
+  }
+  pushUndo();
+  addFromClipboardData(clipboard, { atMouse: true });
+  renderPropPanel();
+  render();
+  setStatus('붙여넣었습니다.');
+}
+
+function duplicateSelected() {
+  const picked = selectedObjectData();
+  if (!picked) {
+    setStatus(selected ? '스폰/골은 복제할 수 없습니다.' : '복제할 오브젝트를 먼저 선택하세요.');
+    return;
+  }
+  clipboard = picked;
+  pushUndo();
+  addFromClipboardData(picked, { atMouse: false });
+  renderPropPanel();
+  render();
+  setStatus('복제했습니다.');
+}
+
+function nudgeSelected(key) {
+  if (!selected) return;
+  if (selected.kind === 'goal' || selected.kind === 'spawn') {
+    setStatus('스폰/골은 선택 도구로 드래그해서 옮기세요.');
+    return;
+  }
+  const dc = key === 'ArrowLeft' ? -1 : key === 'ArrowRight' ? 1 : 0;
+  const dr = key === 'ArrowUp' ? -1 : key === 'ArrowDown' ? 1 : 0;
+  if (!dc && !dr) return;
+  pushUndo();
+  const { kind, index } = selected;
+  const obj = kind === 'platform' || kind === 'water' ? stage[KIND_TO_ARRAY[kind]][index] : kind === 'cone' ? stage.cones[index] : stage.enemies[index];
+  obj.x += dc * TILE;
+  obj.y += dr * TILE;
+  if (kind === 'enemy') {
+    obj.patrolMinX += dc * TILE;
+    obj.patrolMaxX += dc * TILE;
+  }
   renderPropPanel();
   render();
 }
@@ -179,10 +316,14 @@ function onMouseDown(e) {
     const hit = hitTest(x, y);
     selected = hit ? { kind: hit.kind, index: hit.index } : null;
     renderPropPanel();
-    if (hit) dragMode = 'move';
+    if (hit) {
+      dragMode = 'move';
+      moveDragSnapshotted = false;
+    }
   } else if (tool === 'erase') {
     const hit = hitTest(x, y);
     if (hit && hit.kind !== 'goal' && hit.kind !== 'spawn') {
+      pushUndo();
       stage[KIND_TO_ARRAY[hit.kind]].splice(hit.index, 1);
       if (selected && selected.kind === hit.kind && selected.index === hit.index) {
         selected = null;
@@ -194,17 +335,21 @@ function onMouseDown(e) {
     dragStartCell = cell;
     dragCurrentCell = cell;
   } else if (tool === 'cone') {
+    pushUndo();
     const r = placementRect('cone', cell.col, cell.row);
     stage.cones.push({ x: r.x, y: r.y });
   } else if (tool === 'enemy') {
+    pushUndo();
     const r = placementRect('enemy', cell.col, cell.row);
     const patrolMinX = Math.max(0, r.x - 3 * TILE);
     const patrolMaxX = Math.min(stage.width - ENEMY_W, r.x + 3 * TILE);
     stage.enemies.push({ x: r.x, y: r.y, patrolMinX, patrolMaxX });
   } else if (tool === 'spawn') {
+    pushUndo();
     const r = placementRect('spawn', cell.col, cell.row);
     stage.spawn = { x: r.x, y: r.y };
   } else if (tool === 'goal') {
+    pushUndo();
     const r = placementRect('goal', cell.col, cell.row);
     stage.goal = { x: r.x, y: r.y, w: r.w, h: r.h };
   }
@@ -220,6 +365,10 @@ function onMouseMove(e) {
   if (dragMode === 'rect') {
     dragCurrentCell = cell;
   } else if (dragMode === 'move' && selected) {
+    if (!moveDragSnapshotted) {
+      pushUndo();
+      moveDragSnapshotted = true;
+    }
     moveSelectedTo(cell);
   }
   render();
@@ -228,6 +377,7 @@ function onMouseMove(e) {
 function onMouseUp() {
   if (dragMode === 'rect' && dragStartCell && dragCurrentCell) {
     const rect = rectFromCells(dragStartCell, dragCurrentCell);
+    pushUndo();
     if (tool === 'platform') {
       stage.platforms.push({ x: rect.x, y: rect.y, w: rect.w, h: rect.h });
     } else if (tool === 'water') {
@@ -240,6 +390,7 @@ function onMouseUp() {
   dragMode = null;
   dragStartCell = null;
   dragCurrentCell = null;
+  moveDragSnapshotted = false;
   render();
 }
 
@@ -438,6 +589,7 @@ function renderPropPanel() {
       <div class="btn-col"><button id="p-delete" class="danger">삭제</button></div>
     `;
     const applyRect = () => {
+      pushUndo();
       obj.x = Number(document.getElementById('p-x').value) * TILE;
       obj.y = Number(document.getElementById('p-y').value) * TILE;
       obj.w = Math.max(1, Number(document.getElementById('p-w').value)) * TILE;
@@ -449,6 +601,7 @@ function renderPropPanel() {
       const movingCb = document.getElementById('p-moving');
       const fields = document.getElementById('p-moving-fields');
       movingCb.addEventListener('change', () => {
+        pushUndo();
         if (movingCb.checked) {
           obj.moving = obj.moving || { axis: 'x', range: 2 * TILE, speed: 1 };
           fields.style.display = '';
@@ -460,6 +613,7 @@ function renderPropPanel() {
       });
       const applyMoving = () => {
         if (!obj.moving) return;
+        pushUndo();
         obj.moving.axis = document.getElementById('p-axis').value;
         obj.moving.range = Number(document.getElementById('p-range').value) * TILE;
         obj.moving.speed = Number(document.getElementById('p-speed').value);
@@ -478,6 +632,7 @@ function renderPropPanel() {
       <div class="btn-col"><button id="p-delete" class="danger">삭제</button></div>
     `;
     const apply = () => {
+      pushUndo();
       obj.x = Number(document.getElementById('p-col').value) * TILE;
       obj.y = Number(document.getElementById('p-row').value) * TILE - CONE_H;
       render();
@@ -495,6 +650,7 @@ function renderPropPanel() {
       <div class="btn-col"><button id="p-delete" class="danger">삭제</button></div>
     `;
     const apply = () => {
+      pushUndo();
       obj.x = Number(document.getElementById('p-col').value) * TILE;
       obj.y = Number(document.getElementById('p-row').value) * TILE - ENEMY_H;
       obj.patrolMinX = Number(document.getElementById('p-min').value) * TILE;
@@ -510,6 +666,7 @@ function renderPropPanel() {
       <div class="legend hint">스폰 지점은 삭제할 수 없습니다.</div>
     `;
     const apply = () => {
+      pushUndo();
       stage.spawn.x = Number(document.getElementById('p-col').value) * TILE;
       stage.spawn.y = Number(document.getElementById('p-row').value) * TILE - PLAYER_H;
       render();
@@ -523,6 +680,7 @@ function renderPropPanel() {
       <div class="legend hint">골 지점은 삭제할 수 없습니다.</div>
     `;
     const apply = () => {
+      pushUndo();
       stage.goal.x = Number(document.getElementById('p-col').value) * TILE;
       stage.goal.y = Number(document.getElementById('p-row').value) * TILE;
       render();
@@ -661,6 +819,8 @@ function refreshMapsList() {
       stage = normalizeImported(clone(entry.stage));
       editingId = entry.id;
       selected = null;
+      undoStack = [];
+      redoStack = [];
       syncMetaInputs();
       resizeCanvas();
       renderPropPanel();
@@ -683,6 +843,8 @@ function resetToNewStage() {
   stage = defaultStage();
   editingId = null;
   selected = null;
+  undoStack = [];
+  redoStack = [];
   syncMetaInputs();
   resizeCanvas();
   renderPropPanel();
@@ -695,31 +857,97 @@ canvas.addEventListener('mousemove', onMouseMove);
 window.addEventListener('mouseup', onMouseUp);
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
+const movingAxisChoice = document.getElementById('moving-axis-choice');
+const TOOL_KEYS = { 1: 'select', 2: 'erase', 3: 'platform', 4: 'moving', 5: 'water', 6: 'cone', 7: 'enemy', 8: 'spawn', 9: 'goal' };
+
+function selectTool(name) {
+  document.querySelectorAll('.tool-btn').forEach((b) => b.classList.toggle('active', b.dataset.tool === name));
+  tool = name;
+  dragMode = null;
+  dragStartCell = null;
+  dragCurrentCell = null;
+  movingAxisChoice.style.display = tool === 'moving' ? '' : 'none';
+  if (tool !== 'select') {
+    selected = null;
+    renderPropPanel();
+  }
+  render();
+}
+
 window.addEventListener('keydown', (e) => {
   const tag = document.activeElement && document.activeElement.tagName;
-  if ((e.key === 'Delete' || e.key === 'Backspace') && selected && tag !== 'INPUT' && tag !== 'TEXTAREA') {
+  const typing = tag === 'INPUT' || tag === 'TEXTAREA';
+  const ctrlOrCmd = e.ctrlKey || e.metaKey;
+
+  if (ctrlOrCmd && e.key.toLowerCase() === 's') {
+    e.preventDefault();
+    document.getElementById('btn-save-map').click();
+    return;
+  }
+  if (typing) return;
+
+  if ((e.key === 'Delete' || e.key === 'Backspace') && selected) {
     e.preventDefault();
     deleteSelected();
+    return;
+  }
+  if (ctrlOrCmd && e.key.toLowerCase() === 'z') {
+    e.preventDefault();
+    if (e.shiftKey) redo();
+    else undo();
+    return;
+  }
+  if (ctrlOrCmd && e.key.toLowerCase() === 'y') {
+    e.preventDefault();
+    redo();
+    return;
+  }
+  if (ctrlOrCmd && e.key.toLowerCase() === 'c') {
+    e.preventDefault();
+    copySelected();
+    return;
+  }
+  if (ctrlOrCmd && e.key.toLowerCase() === 'v') {
+    e.preventDefault();
+    pasteClipboard();
+    return;
+  }
+  if (ctrlOrCmd && e.key.toLowerCase() === 'd') {
+    e.preventDefault();
+    duplicateSelected();
+    return;
+  }
+  if (e.key === 'Escape') {
+    if (dragMode) {
+      dragMode = null;
+      dragStartCell = null;
+      dragCurrentCell = null;
+      render();
+    } else if (selected) {
+      selected = null;
+      renderPropPanel();
+      render();
+    }
+    return;
+  }
+  if (ctrlOrCmd || e.altKey) return;
+
+  if (TOOL_KEYS[e.key]) {
+    e.preventDefault();
+    selectTool(TOOL_KEYS[e.key]);
+    return;
+  }
+  if (selected && (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+    e.preventDefault();
+    nudgeSelected(e.key);
   }
 });
 
-const movingAxisChoice = document.getElementById('moving-axis-choice');
+document.getElementById('btn-undo').addEventListener('click', undo);
+document.getElementById('btn-redo').addEventListener('click', redo);
 
 document.querySelectorAll('.tool-btn').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.tool-btn').forEach((b) => b.classList.remove('active'));
-    btn.classList.add('active');
-    tool = btn.dataset.tool;
-    dragMode = null;
-    dragStartCell = null;
-    dragCurrentCell = null;
-    movingAxisChoice.style.display = tool === 'moving' ? '' : 'none';
-    if (tool !== 'select') {
-      selected = null;
-      renderPropPanel();
-    }
-    render();
-  });
+  btn.addEventListener('click', () => selectTool(btn.dataset.tool));
 });
 
 document.querySelectorAll('.axis-btn').forEach((btn) => {
@@ -755,6 +983,7 @@ document.getElementById('btn-apply-size').addEventListener('click', () => {
     stage.spawn.x + PLAYER_W > newW ||
     stage.spawn.y + PLAYER_H > newH;
   if (outOfBounds && !confirm('크기를 줄이면 일부 오브젝트가 화면 밖으로 벗어날 수 있습니다. 계속하시겠습니까?')) return;
+  pushUndo();
   stage.width = newW;
   stage.height = newH;
   resizeCanvas();
@@ -808,13 +1037,15 @@ document.getElementById('btn-copy-code').addEventListener('click', async () => {
 
 document.getElementById('btn-download-js').addEventListener('click', () => {
   const clean = sanitizeStageForSave(stage);
-  const code = `export const stage = ${stageToCode(clean)};\n`;
+  const code = `import { TILE } from '../js/constants.js';\n\nexport default ${stageToCode(clean)};\n`;
   download(`${(clean.name || 'stage').replace(/\s+/g, '_')}.js`, code);
+  setStatus('다운로드했습니다. 이 파일을 프로젝트의 custom-stages 폴더에 넣으면 게임이 자동으로 스테이지에 추가합니다.');
 });
 
 document.getElementById('btn-download-json').addEventListener('click', () => {
   const clean = sanitizeStageForSave(stage);
   download(`${(clean.name || 'stage').replace(/\s+/g, '_')}.json`, JSON.stringify(clean, null, 2));
+  setStatus('다운로드했습니다. 이 파일도 custom-stages 폴더에 넣으면 게임이 자동으로 인식합니다.');
 });
 
 document.getElementById('import-json-input').addEventListener('change', (e) => {
@@ -826,6 +1057,8 @@ document.getElementById('import-json-input').addEventListener('change', (e) => {
       stage = normalizeImported(JSON.parse(reader.result));
       editingId = null;
       selected = null;
+      undoStack = [];
+      redoStack = [];
       syncMetaInputs();
       resizeCanvas();
       renderPropPanel();
