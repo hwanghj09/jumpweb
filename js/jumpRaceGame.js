@@ -60,6 +60,7 @@ export class JumpRaceMatch {
     this.forfeited = false;
     this.errorMsg = '';
     this.stateSendAcc = 0;
+    this.jabHitApplied = false;
     this.exitRequested = false;
     this.mouse = { x: -1, y: -1 };
     this.buttons = [];
@@ -87,6 +88,12 @@ export class JumpRaceMatch {
       this.oppPlayer.facing = msg.facing;
       this.oppPlayer.state = msg.state;
       this.oppPlayer.jabTimer = msg.jabTimer;
+    });
+    this.net.on('hit', (msg) => {
+      if (this.myPlayer && this.phase === 'ROUND') {
+        this.myPlayer.applyKnockback(msg.dir);
+        music.playJabSfx();
+      }
     });
     this.net.on('round_result', (msg) => {
       this.score = msg.score;
@@ -143,6 +150,7 @@ export class JumpRaceMatch {
     this.camera.snap(this.myPlayer, this.levelW, this.levelH);
     this.particles = [];
     this.stateSendAcc = 0;
+    this.jabHitApplied = false;
     this.time = 0;
     this.countdown = PVP_COUNTDOWN;
     this.phase = 'COUNTDOWN';
@@ -195,8 +203,18 @@ export class JumpRaceMatch {
         for (const p of this.platforms) p.update(dt, this.time);
         this.myPlayer.update(dt, input, this.platforms, this.enemies, this.water);
         if (this.myPlayer.justJumped) music.playJumpSfx();
-        if (this.myPlayer.justJabbed) music.playJabSfx();
+        if (this.myPlayer.justJabbed) {
+          this.jabHitApplied = false;
+          music.playJabSfx();
+        }
         if (this.myPlayer.justEnteredWater) music.playSplashSfx();
+        if (this.myPlayer.jabTimer > 0 && !this.jabHitApplied) {
+          const hb = this.myPlayer.getJabHitbox();
+          if (aabbOverlap(hb, this.oppPlayer)) {
+            this.jabHitApplied = true;
+            this.net.sendHit(this.myPlayer.facing);
+          }
+        }
         for (const e of this.enemies) e.update(dt, this.myPlayer, this.platforms);
         updateParticles(this.particles, dt);
         this.oppPlayer.animTime += dt;
