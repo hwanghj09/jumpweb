@@ -1,13 +1,15 @@
-// WebSocket client for PvP matchmaking + relay.
+// WebSocket client for online matchmaking + relay. Shared by both modes:
+//   - 'pvp': push-opponent-out-of-the-arena (js/pvpGame.js)
+//   - 'jumprace': race through an official jump-map stage (js/jumpRaceGame.js)
 // Protocol (JSON messages), matches server/server.js:
-//   C->S queue_join {}
+//   C->S queue_join {mode: 'pvp' | 'jumprace'}
 //   C->S queue_leave {}
 //   C->S state {x,y,vx,vy,facing,anim}      (sent ~PVP_STATE_HZ times/sec while in a match)
-//   C->S hit {dir}                          (my jab landed on opponent, dir is my facing)
-//   C->S ringout {}                         (I fell out of the arena)
-//   C->S ready {}                           (loaded the round's arena, ready for next round)
+//   C->S hit {dir}                          (pvp only: my jab landed on opponent, dir is my facing)
+//   C->S ringout {}                         (pvp only: I fell out of the arena - I lost this round)
+//   C->S finish {}                          (jumprace only: I reached the goal first - I won this round)
 //   S->C queued {}
-//   S->C match_found {side, mapIndex}       (side: 'p1' | 'p2')
+//   S->C match_found {side, mapIndex, mode} (side: 'p1' | 'p2')
 //   S->C state {x,y,vx,vy,facing,anim}      (opponent's state, relayed)
 //   S->C hit {dir}                          (opponent's jab landed on me, relayed)
 //   S->C round_result {loser, score, matchOver, nextMapIndex}
@@ -71,8 +73,8 @@ export class Net {
     this.ws.send(JSON.stringify({ type, ...data }));
   }
 
-  joinQueue() {
-    this.send('queue_join');
+  joinQueue(mode = 'pvp') {
+    this.send('queue_join', { mode });
   }
 
   leaveQueue() {
@@ -89,6 +91,10 @@ export class Net {
 
   sendRingout() {
     this.send('ringout');
+  }
+
+  sendFinish() {
+    this.send('finish');
   }
 
   sendReady() {

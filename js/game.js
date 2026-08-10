@@ -23,7 +23,9 @@ import { getCustomStages } from './customLevels.js';
 import { getCachedFolderStages, refreshFolderStages } from './customFolder.js';
 import { getCachedServerStages, refreshServerCustomStages } from './customServerMaps.js';
 import { PvpMatch } from './pvpGame.js';
+import { JumpRaceMatch } from './jumpRaceGame.js';
 import { drawTitleFight } from './titleFight.js';
+import { isFullscreen, toggleFullscreen } from './fullscreen.js';
 
 export class Game {
   constructor() {
@@ -56,6 +58,7 @@ export class Game {
     this.levelH = 0;
     this.particles = [];
     this.pvp = null;
+    this.jumpRace = null;
     this.settingsReturnState = 'PAUSED';
   }
 
@@ -67,6 +70,18 @@ export class Game {
   exitPvp() {
     if (this.pvp) this.pvp.destroy();
     this.pvp = null;
+    this.state = 'MULTI_SELECT';
+    music.switchTrack(MENU_TRACK);
+  }
+
+  startJumpRace() {
+    this.jumpRace = new JumpRaceMatch();
+    this.state = 'JUMP_RACE';
+  }
+
+  exitJumpRace() {
+    if (this.jumpRace) this.jumpRace.destroy();
+    this.jumpRace = null;
     this.state = 'MULTI_SELECT';
     music.switchTrack(MENU_TRACK);
   }
@@ -172,6 +187,12 @@ export class Game {
       return;
     }
 
+    if (this.state === 'JUMP_RACE') {
+      this.jumpRace.update(dt, input);
+      if (this.jumpRace.exitRequested) this.exitJumpRace();
+      return;
+    }
+
     if (this.state === 'PLAYING') {
       if (input.pressed('Escape')) {
         this.state = 'PAUSED';
@@ -253,6 +274,10 @@ export class Game {
       this.pvp.setMouse(this.mouse.x, this.mouse.y);
       this.pvp.draw(ctx);
       this.buttons = this.pvp.buttons;
+    } else if (this.state === 'JUMP_RACE') {
+      this.jumpRace.setMouse(this.mouse.x, this.mouse.y);
+      this.jumpRace.draw(ctx);
+      this.buttons = this.jumpRace.buttons;
     } else if (this.state === 'SETTINGS') {
       if (this.settingsReturnState === 'TITLE') drawBackground(ctx, CANVAS_W, CANVAS_H, this.time);
       else this.drawGame(ctx);
@@ -263,6 +288,7 @@ export class Game {
       else if (this.state === 'STAGE_CLEAR') this.drawStageClear(ctx);
       else if (this.state === 'CUSTOM_CLEAR') this.drawCustomClear(ctx);
     }
+    this.drawFullscreenButton(ctx);
   }
 
   drawGame(ctx) {
@@ -285,9 +311,9 @@ export class Game {
     ctx.font = 'bold 48px monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
-    ctx.fillText('JUMP MAP', CANVAS_W / 2, 150);
+    ctx.fillText('점프맵', CANVAS_W / 2, 150);
     ctx.font = '16px monospace';
-    ctx.fillText('8-BIT PIXEL PLATFORMER', CANVAS_W / 2, 184);
+    ctx.fillText('8비트 픽셀 플랫포머', CANVAS_W / 2, 184);
 
     const wideW = 320;
     const wideH = 64;
@@ -313,23 +339,71 @@ export class Game {
     });
   }
 
+  drawFullscreenButton(ctx) {
+    const size = 28;
+    const x = CANVAS_W - size - 8;
+    const y = 8;
+    const hover =
+      this.mouse.x >= x && this.mouse.x <= x + size && this.mouse.y >= y && this.mouse.y <= y + size;
+    ctx.fillStyle = hover ? 'rgba(0,0,0,0.6)' : 'rgba(0,0,0,0.4)';
+    ctx.fillRect(x, y, size, size);
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    const pad = 6;
+    const arm = 6;
+    if (isFullscreen()) {
+      // "restore" icon: brackets pointing inward, offset from the corners
+      ctx.moveTo(x + pad + arm, y + pad);
+      ctx.lineTo(x + pad, y + pad);
+      ctx.lineTo(x + pad, y + pad + arm);
+      ctx.moveTo(x + size - pad - arm, y + pad);
+      ctx.lineTo(x + size - pad, y + pad);
+      ctx.lineTo(x + size - pad, y + pad + arm);
+      ctx.moveTo(x + pad + arm, y + size - pad);
+      ctx.lineTo(x + pad, y + size - pad);
+      ctx.lineTo(x + pad, y + size - pad - arm);
+      ctx.moveTo(x + size - pad - arm, y + size - pad);
+      ctx.lineTo(x + size - pad, y + size - pad);
+      ctx.lineTo(x + size - pad, y + size - pad - arm);
+    } else {
+      // "expand" icon: brackets at the corners
+      ctx.moveTo(x + pad, y + pad + arm);
+      ctx.lineTo(x + pad, y + pad);
+      ctx.lineTo(x + pad + arm, y + pad);
+      ctx.moveTo(x + size - pad - arm, y + pad);
+      ctx.lineTo(x + size - pad, y + pad);
+      ctx.lineTo(x + size - pad, y + pad + arm);
+      ctx.moveTo(x + pad, y + size - pad - arm);
+      ctx.lineTo(x + pad, y + size - pad);
+      ctx.lineTo(x + pad + arm, y + size - pad);
+      ctx.moveTo(x + size - pad - arm, y + size - pad);
+      ctx.lineTo(x + size - pad, y + size - pad);
+      ctx.lineTo(x + size - pad, y + size - pad - arm);
+    }
+    ctx.stroke();
+    this.buttons.push({ x, y, w: size, h: size, action: () => toggleFullscreen(), disabled: false });
+  }
+
   drawMultiSelect(ctx) {
     drawBackground(ctx, CANVAS_W, CANVAS_H, this.time);
     ctx.fillStyle = '#111';
     ctx.font = 'bold 32px monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
-    ctx.fillText('멀티 플레이', CANVAS_W / 2, 150);
+    ctx.fillText('멀티 플레이', CANVAS_W / 2, 110);
 
     const wideW = 320;
     const wideH = 64;
     const wideX = CANVAS_W / 2 - wideW / 2;
-    const btn1Y = 220;
+    const btn1Y = 170;
     const btn2Y = btn1Y + wideH + 14;
+    const btn3Y = btn2Y + wideH + 14;
     this.addButton(ctx, wideX, btn1Y, wideW, wideH, '매칭 찾기 (1:1 대결)', () => this.startPvp());
-    this.addButton(ctx, wideX, btn2Y, wideW, wideH, '커스텀 맵 플레이', () => this.goToCustomSelect());
+    this.addButton(ctx, wideX, btn2Y, wideW, wideH, '멀티 경주', () => this.startJumpRace());
+    this.addButton(ctx, wideX, btn3Y, wideW, wideH, '커스텀 맵 플레이', () => this.goToCustomSelect());
 
-    this.addButton(ctx, CANVAS_W / 2 - 70, btn2Y + wideH + 28, 140, 44, 'BACK', () => {
+    this.addButton(ctx, CANVAS_W / 2 - 70, btn3Y + wideH + 28, 140, 44, '뒤로', () => {
       this.state = 'TITLE';
     });
   }
@@ -340,7 +414,7 @@ export class Game {
     ctx.font = 'bold 28px monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
-    ctx.fillText('STAGE SELECT', CANVAS_W / 2, 80);
+    ctx.fillText('스테이지 선택', CANVAS_W / 2, 80);
 
     const cols = 4;
     const rows = 2;
@@ -373,21 +447,21 @@ export class Game {
     if (totalPages > 1) {
       ctx.fillStyle = '#111';
       ctx.font = '16px monospace';
-      ctx.fillText(`PAGE ${this.stagePage + 1} / ${totalPages}`, CANVAS_W / 2, gridBottom + 30);
+      ctx.fillText(`${this.stagePage + 1} / ${totalPages} 페이지`, CANVAS_W / 2, gridBottom + 30);
     }
 
     const navY = gridBottom + 46;
     if (this.stagePage > 0) {
-      this.addButton(ctx, CANVAS_W / 2 - 260, navY, 100, 40, '< PREV', () => {
+      this.addButton(ctx, CANVAS_W / 2 - 260, navY, 100, 40, '< 이전', () => {
         this.stagePage -= 1;
       });
     }
     if (this.stagePage < totalPages - 1) {
-      this.addButton(ctx, CANVAS_W / 2 + 160, navY, 100, 40, 'NEXT >', () => {
+      this.addButton(ctx, CANVAS_W / 2 + 160, navY, 100, 40, '다음 >', () => {
         this.stagePage += 1;
       });
     }
-    this.addButton(ctx, CANVAS_W / 2 - 70, navY, 140, 40, 'BACK', () => {
+    this.addButton(ctx, CANVAS_W / 2 - 70, navY, 140, 40, '뒤로', () => {
       this.state = 'TITLE';
       music.switchTrack(MENU_TRACK);
     });
@@ -400,18 +474,18 @@ export class Game {
     ctx.font = 'bold 32px monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
-    ctx.fillText('PAUSED', CANVAS_W / 2, 150);
-    this.addButton(ctx, CANVAS_W / 2 - 110, 205, 220, 44, 'RESUME', () => {
+    ctx.fillText('일시정지', CANVAS_W / 2, 150);
+    this.addButton(ctx, CANVAS_W / 2 - 110, 205, 220, 44, '계속하기', () => {
       this.state = 'PLAYING';
     });
-    this.addButton(ctx, CANVAS_W / 2 - 110, 258, 220, 44, 'RESTART STAGE', () =>
+    this.addButton(ctx, CANVAS_W / 2 - 110, 258, 220, 44, '스테이지 재시작', () =>
       this.playingCustom ? this.loadCustomStage(this.customIndex) : this.loadStage(this.stageIndex)
     );
-    this.addButton(ctx, CANVAS_W / 2 - 110, 311, 220, 44, 'SETTINGS', () => {
+    this.addButton(ctx, CANVAS_W / 2 - 110, 311, 220, 44, '설정', () => {
       this.settingsReturnState = 'PAUSED';
       this.state = 'SETTINGS';
     });
-    this.addButton(ctx, CANVAS_W / 2 - 110, 364, 220, 44, this.playingCustom ? '커스텀 맵 목록' : 'STAGE SELECT', () =>
+    this.addButton(ctx, CANVAS_W / 2 - 110, 364, 220, 44, this.playingCustom ? '커스텀 맵 목록' : '스테이지 선택', () =>
       this.playingCustom ? this.goToCustomSelect() : this.goToStageSelect()
     );
   }
@@ -423,10 +497,10 @@ export class Game {
     ctx.font = 'bold 32px monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
-    ctx.fillText('SETTINGS', CANVAS_W / 2, 150);
+    ctx.fillText('설정', CANVAS_W / 2, 150);
 
     ctx.font = '16px monospace';
-    ctx.fillText(`VOLUME: ${Math.round(music.volume * 100)}%`, CANVAS_W / 2, 205);
+    ctx.fillText(`음량: ${Math.round(music.volume * 100)}%`, CANVAS_W / 2, 205);
 
     const barX = CANVAS_W / 2 - 110;
     const barY = 222;
@@ -439,10 +513,10 @@ export class Game {
     ctx.fillRect(barX + 2, barY + 2, (barW - 4) * music.volume, barH - 4);
 
     this.addButton(ctx, CANVAS_W / 2 - 160, 258, 60, 44, '-', () => music.setVolume(music.volume - 0.1));
-    this.addButton(ctx, CANVAS_W / 2 - 90, 258, 180, 44, music.muted ? 'UNMUTE' : 'MUTE', () => music.toggleMute());
+    this.addButton(ctx, CANVAS_W / 2 - 90, 258, 180, 44, music.muted ? '소리 켜기' : '소리 끄기', () => music.toggleMute());
     this.addButton(ctx, CANVAS_W / 2 + 100, 258, 60, 44, '+', () => music.setVolume(music.volume + 0.1));
 
-    this.addButton(ctx, CANVAS_W / 2 - 110, 330, 220, 46, 'BACK', () => {
+    this.addButton(ctx, CANVAS_W / 2 - 110, 330, 220, 46, '뒤로', () => {
       this.state = this.settingsReturnState;
     });
   }
@@ -454,17 +528,17 @@ export class Game {
     ctx.font = 'bold 36px monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
-    ctx.fillText('STAGE CLEAR!', CANVAS_W / 2, 180);
+    ctx.fillText('스테이지 클리어!', CANVAS_W / 2, 180);
 
     const isLast = this.stageIndex === this.stages.length - 1;
     if (isLast) {
       ctx.fillStyle = '#fff';
       ctx.font = '18px monospace';
-      ctx.fillText('ALL STAGES CLEARED', CANVAS_W / 2, 220);
-      this.addButton(ctx, CANVAS_W / 2 - 110, 260, 220, 46, 'STAGE SELECT', () => this.goToStageSelect());
+      ctx.fillText('모든 스테이지 클리어', CANVAS_W / 2, 220);
+      this.addButton(ctx, CANVAS_W / 2 - 110, 260, 220, 46, '스테이지 선택', () => this.goToStageSelect());
     } else {
-      this.addButton(ctx, CANVAS_W / 2 - 110, 260, 220, 46, 'NEXT STAGE', () => this.loadStage(this.stageIndex + 1));
-      this.addButton(ctx, CANVAS_W / 2 - 110, 320, 220, 46, 'STAGE SELECT', () => this.goToStageSelect());
+      this.addButton(ctx, CANVAS_W / 2 - 110, 260, 220, 46, '다음 스테이지', () => this.loadStage(this.stageIndex + 1));
+      this.addButton(ctx, CANVAS_W / 2 - 110, 320, 220, 46, '스테이지 선택', () => this.goToStageSelect());
     }
   }
 
@@ -478,14 +552,14 @@ export class Game {
     ctx.font = '12px monospace';
     ctx.fillText('유저들이 만들어 서버에 올린 맵입니다 (일반 스테이지 진행과는 무관합니다)', CANVAS_W / 2, 90);
 
-    this.addButton(ctx, CANVAS_W - 128, 16, 112, 32, '새로고침', () => this.goToCustomSelect());
+    this.addButton(ctx, CANVAS_W - 168, 16, 112, 32, '새로고침', () => this.goToCustomSelect());
 
     if (!this.customMaps.length) {
       ctx.fillStyle = '#333';
       ctx.font = '15px monospace';
       ctx.fillText('아직 커스텀 맵이 없습니다.', CANVAS_W / 2, CANVAS_H / 2 - 20);
       ctx.fillText("맵 에디터에서 맵을 만들고 '서버에 업로드'해보세요.", CANVAS_W / 2, CANVAS_H / 2 + 6);
-      this.addButton(ctx, CANVAS_W / 2 - 70, CANVAS_H / 2 + 50, 140, 44, 'BACK', () => {
+      this.addButton(ctx, CANVAS_W / 2 - 70, CANVAS_H / 2 + 50, 140, 44, '뒤로', () => {
         this.state = 'MULTI_SELECT';
         music.switchTrack(MENU_TRACK);
       });
@@ -523,21 +597,21 @@ export class Game {
     if (totalPages > 1) {
       ctx.fillStyle = '#111';
       ctx.font = '16px monospace';
-      ctx.fillText(`PAGE ${this.customPage + 1} / ${totalPages}`, CANVAS_W / 2, gridBottom + 30);
+      ctx.fillText(`${this.customPage + 1} / ${totalPages} 페이지`, CANVAS_W / 2, gridBottom + 30);
     }
 
     const navY = gridBottom + 46;
     if (this.customPage > 0) {
-      this.addButton(ctx, CANVAS_W / 2 - 260, navY, 100, 40, '< PREV', () => {
+      this.addButton(ctx, CANVAS_W / 2 - 260, navY, 100, 40, '< 이전', () => {
         this.customPage -= 1;
       });
     }
     if (this.customPage < totalPages - 1) {
-      this.addButton(ctx, CANVAS_W / 2 + 160, navY, 100, 40, 'NEXT >', () => {
+      this.addButton(ctx, CANVAS_W / 2 + 160, navY, 100, 40, '다음 >', () => {
         this.customPage += 1;
       });
     }
-    this.addButton(ctx, CANVAS_W / 2 - 70, navY, 140, 40, 'BACK', () => {
+    this.addButton(ctx, CANVAS_W / 2 - 70, navY, 140, 40, '뒤로', () => {
       this.state = 'MULTI_SELECT';
       music.switchTrack(MENU_TRACK);
     });
@@ -550,7 +624,7 @@ export class Game {
     ctx.font = 'bold 36px monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
-    ctx.fillText('MAP CLEAR!', CANVAS_W / 2, 180);
+    ctx.fillText('맵 클리어!', CANVAS_W / 2, 180);
 
     const hasNext = this.customIndex + 1 < this.customMaps.length;
     this.addButton(ctx, CANVAS_W / 2 - 110, 230, 220, 46, '다시하기', () => this.loadCustomStage(this.customIndex));

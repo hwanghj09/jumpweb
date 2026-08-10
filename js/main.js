@@ -17,6 +17,19 @@ canvas.height = CANVAS_H;
 const ctx = canvas.getContext('2d');
 ctx.imageSmoothingEnabled = false;
 
+function applyFullscreenSizing() {
+  if (document.fullscreenElement === canvas) {
+    const scale = Math.min(window.innerWidth / CANVAS_W, window.innerHeight / CANVAS_H);
+    canvas.style.width = `${CANVAS_W * scale}px`;
+    canvas.style.height = `${CANVAS_H * scale}px`;
+  } else {
+    canvas.style.width = '';
+    canvas.style.height = '';
+  }
+}
+document.addEventListener('fullscreenchange', applyFullscreenSizing);
+window.addEventListener('resize', applyFullscreenSizing);
+
 const game = new Game();
 
 function toCanvasCoords(e) {

@@ -185,7 +185,7 @@ export function drawHUD(ctx, hint, stageName) {
   ctx.textBaseline = 'middle';
   ctx.fillText(hint, 10, 14);
   ctx.textAlign = 'right';
-  ctx.fillText(stageName, CANVAS_W - 10, 14);
+  ctx.fillText(stageName, CANVAS_W - 44, 14);
   ctx.textAlign = 'left';
 }
 

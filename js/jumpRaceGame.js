@@ -1,33 +1,54 @@
 import {
   CANVAS_W,
   CANVAS_H,
-  PVP_ARENA_COUNT,
-  PVP_RINGOUT_MARGIN,
+  FALL_DEATH_MARGIN,
   PVP_STATE_HZ,
   PVP_ROUND_END_DELAY,
   PVP_COUNTDOWN,
 } from './constants.js';
+import { Camera } from './camera.js';
 import { Player } from './player.js';
-import { Platform } from './world.js';
+import { Enemy } from './enemy.js';
+import { Platform, Cone, Water } from './world.js';
+import { STAGES } from './levels.js';
 import { aabbOverlap } from './collision.js';
-import { drawPlatform, drawPlayerSprite, drawButton } from './renderer.js';
-import { drawBackground } from './background.js';
-import { playerSheet } from './sprites.js';
+import {
+  drawPlatform,
+  drawCone,
+  drawWater,
+  drawGoal,
+  drawPlayerSprite,
+  drawEnemySprite,
+  drawButton,
+} from './renderer.js';
+import { playerSheet, enemySheet } from './sprites.js';
+import { spawnBurst, updateParticles, drawParticles } from './particles.js';
 import { music } from './audio.js';
+import { drawBackground } from './background.js';
 import { Net } from './net.js';
-import { PVP_ARENAS } from './pvpMaps.js';
 
-const FIXED_CAM = { x: 0, y: 0 };
-const HINT = '방향키/A,D 이동 · Space 점프 · Shift 달리기 · X 잽(상대를 밀쳐냄) · ESC 나가기';
-
-export class PvpMatch {
+// Online 1:1 race through one of the official jump-map stages (js/levels.js).
+// Unlike PvpMatch (js/pvpGame.js) the map scrolls - each client keeps its own
+// scrolling camera and simulates its own hazards/enemies locally; the
+// opponent is only ever a relayed ghost, never physically interactive.
+// Winning a heat means reaching the goal first, not pushing the other player
+// out - so this uses 'finish' instead of 'ringout' (see js/net.js).
+export class JumpRaceMatch {
   constructor() {
     this.net = new Net();
+    this.camera = new Camera();
     this.phase = 'CONNECTING'; // CONNECTING | QUEUE | COUNTDOWN | ROUND | ROUND_END_WAIT | ROUND_END | MATCH_END | ERROR
     this.side = null;
     this.mapIndex = 0;
     this.pendingNextMap = 0;
     this.platforms = [];
+    this.cones = [];
+    this.enemies = [];
+    this.water = [];
+    this.goal = null;
+    this.levelW = 0;
+    this.levelH = 0;
+    this.particles = [];
     this.myPlayer = null;
     this.oppPlayer = null;
     this.score = { p1: 0, p2: 0 };
@@ -39,7 +60,6 @@ export class PvpMatch {
     this.forfeited = false;
     this.errorMsg = '';
     this.stateSendAcc = 0;
-    this.jabHitApplied = false;
     this.exitRequested = false;
     this.mouse = { x: -1, y: -1 };
     this.buttons = [];
@@ -67,12 +87,6 @@ export class PvpMatch {
       this.oppPlayer.facing = msg.facing;
       this.oppPlayer.state = msg.state;
       this.oppPlayer.jabTimer = msg.jabTimer;
-    });
-    this.net.on('hit', (msg) => {
-      if (this.myPlayer && this.phase === 'ROUND') {
-        this.myPlayer.applyKnockback(msg.dir);
-        music.playJabSfx();
-      }
     });
     this.net.on('round_result', (msg) => {
       this.score = msg.score;
@@ -104,7 +118,7 @@ export class PvpMatch {
   async _begin() {
     try {
       await this.net.connect();
-      this.net.joinQueue();
+      this.net.joinQueue('jumprace');
       this.phase = 'QUEUE';
     } catch {
       this.phase = 'ERROR';
@@ -114,27 +128,33 @@ export class PvpMatch {
 
   _startRound(mapIndex) {
     this.mapIndex = mapIndex;
-    const arena = PVP_ARENAS[mapIndex % PVP_ARENA_COUNT];
-    this.platforms = arena.platforms.map((p) => new Platform(p));
-    const mySpawn = this.side === 'p1' ? arena.spawnP1 : arena.spawnP2;
-    const oppSpawn = this.side === 'p1' ? arena.spawnP2 : arena.spawnP1;
-    this.myPlayer = new Player(mySpawn.x, mySpawn.y);
-    this.oppPlayer = new Player(oppSpawn.x, oppSpawn.y);
+    const def = STAGES[mapIndex % STAGES.length];
+    this.platforms = def.platforms.map((p) => new Platform(p));
+    this.cones = def.cones.map((c) => new Cone(c));
+    this.enemies = def.enemies.map((e) => new Enemy(e));
+    this.water = (def.water || []).map((w) => new Water(w));
+    this.goal = def.goal;
+    this.levelW = def.width;
+    this.levelH = def.height;
+    this.myPlayer = new Player(def.spawn.x, def.spawn.y);
+    this.oppPlayer = new Player(def.spawn.x, def.spawn.y);
     this.myPlayer.invuln = 0;
     this.oppPlayer.invuln = 0;
-    this.jabHitApplied = false;
+    this.camera.snap(this.myPlayer, this.levelW, this.levelH);
+    this.particles = [];
     this.stateSendAcc = 0;
     this.time = 0;
     this.countdown = PVP_COUNTDOWN;
     this.phase = 'COUNTDOWN';
   }
 
-  _isRingedOut(p) {
-    return (
-      p.x + p.w < -PVP_RINGOUT_MARGIN ||
-      p.x > CANVAS_W + PVP_RINGOUT_MARGIN ||
-      p.y > CANVAS_H + PVP_RINGOUT_MARGIN
-    );
+  _respawnMyPlayer() {
+    const cx = this.myPlayer.x + this.myPlayer.w / 2;
+    const cy = this.myPlayer.y + this.myPlayer.h / 2;
+    spawnBurst(this.particles, cx, cy);
+    music.playDeathSfx();
+    this.myPlayer.respawn();
+    this.camera.snap(this.myPlayer, this.levelW, this.levelH);
   }
 
   setMouse(x, y) {
@@ -173,19 +193,12 @@ export class PvpMatch {
       case 'ROUND': {
         this.time += dt;
         for (const p of this.platforms) p.update(dt, this.time);
-        this.myPlayer.update(dt, input, this.platforms, [], []);
+        this.myPlayer.update(dt, input, this.platforms, this.enemies, this.water);
         if (this.myPlayer.justJumped) music.playJumpSfx();
-        if (this.myPlayer.justJabbed) {
-          this.jabHitApplied = false;
-          music.playJabSfx();
-        }
-        if (this.myPlayer.jabTimer > 0 && !this.jabHitApplied) {
-          const hb = this.myPlayer.getJabHitbox();
-          if (aabbOverlap(hb, this.oppPlayer)) {
-            this.jabHitApplied = true;
-            this.net.sendHit(this.myPlayer.facing);
-          }
-        }
+        if (this.myPlayer.justJabbed) music.playJabSfx();
+        if (this.myPlayer.justEnteredWater) music.playSplashSfx();
+        for (const e of this.enemies) e.update(dt, this.myPlayer, this.platforms);
+        updateParticles(this.particles, dt);
         this.oppPlayer.animTime += dt;
 
         this.stateSendAcc += dt;
@@ -202,11 +215,23 @@ export class PvpMatch {
           });
         }
 
-        if (this._isRingedOut(this.myPlayer)) {
-          music.playDeathSfx();
-          this.net.sendRingout();
-          this.phase = 'ROUND_END_WAIT';
+        if (this.myPlayer.invuln <= 0) {
+          let died = this.cones.some((c) => aabbOverlap(this.myPlayer, c));
+          if (!died) died = this.enemies.some((e) => e.stunTimer <= 0 && aabbOverlap(this.myPlayer, e));
+          if (!died) died = this.myPlayer.y > this.levelH + FALL_DEATH_MARGIN;
+          if (died) {
+            this._respawnMyPlayer();
+            break;
+          }
         }
+
+        if (aabbOverlap(this.myPlayer, this.goal)) {
+          this.net.sendFinish();
+          this.phase = 'ROUND_END_WAIT';
+          break;
+        }
+
+        this.camera.follow(this.myPlayer, this.levelW, this.levelH, dt);
         break;
       }
 
@@ -232,21 +257,26 @@ export class PvpMatch {
 
   draw(ctx) {
     this.buttons = [];
-    drawBackground(ctx, CANVAS_W, CANVAS_H, this.time);
+    drawBackground(ctx, CANVAS_W, CANVAS_H, this.time, this.camera.x);
 
     if (this.platforms.length && this.myPlayer && this.oppPlayer) {
-      for (const p of this.platforms) drawPlatform(ctx, p, FIXED_CAM);
+      for (const p of this.platforms) drawPlatform(ctx, p, this.camera);
+      for (const c of this.cones) drawCone(ctx, c, this.camera);
+      for (const w of this.water) drawWater(ctx, w, this.camera);
+      drawGoal(ctx, this.goal, this.camera);
+      for (const e of this.enemies) drawEnemySprite(ctx, e, enemySheet, this.camera);
 
       ctx.save();
       ctx.filter = 'invert(1)';
-      drawPlayerSprite(ctx, this.oppPlayer, playerSheet, FIXED_CAM);
+      drawPlayerSprite(ctx, this.oppPlayer, playerSheet, this.camera);
       ctx.restore();
       this._drawTag(ctx, this.oppPlayer, '상대', '#e05a4e');
 
-      drawPlayerSprite(ctx, this.myPlayer, playerSheet, FIXED_CAM);
+      drawPlayerSprite(ctx, this.myPlayer, playerSheet, this.camera);
       this._drawTag(ctx, this.myPlayer, '나', '#2b6cb0');
 
-      this._drawScoreHUD(ctx);
+      drawParticles(ctx, this.particles, this.camera);
+      this._drawHUD(ctx);
     }
 
     if (this.phase === 'CONNECTING') this._drawCenterMessage(ctx, '서버에 연결 중...');
@@ -258,8 +288,8 @@ export class PvpMatch {
   }
 
   _drawTag(ctx, p, label, color) {
-    const x = p.x - FIXED_CAM.x + p.w / 2;
-    const y = p.y - FIXED_CAM.y - 14;
+    const x = p.x - this.camera.x + p.w / 2;
+    const y = p.y - this.camera.y - 14;
     ctx.fillStyle = color;
     ctx.font = 'bold 12px monospace';
     ctx.textAlign = 'center';
@@ -267,19 +297,23 @@ export class PvpMatch {
     ctx.fillText(label, x, y);
   }
 
-  _drawScoreHUD(ctx) {
+  _drawHUD(ctx) {
     const myWins = this.side === 'p1' ? this.score.p1 : this.score.p2;
     const oppWins = this.side === 'p1' ? this.score.p2 : this.score.p1;
+    const def = STAGES[this.mapIndex % STAGES.length];
     ctx.fillStyle = 'rgba(0,0,0,0.45)';
     ctx.fillRect(0, 0, CANVAS_W, 28);
     ctx.fillStyle = '#fff';
-    ctx.font = 'bold 16px monospace';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(`나 ${myWins} : ${oppWins} 상대`, CANVAS_W / 2, 14);
     ctx.font = '13px monospace';
     ctx.textAlign = 'left';
-    ctx.fillText(HINT, 10, 14);
+    ctx.textBaseline = 'middle';
+    ctx.fillText(def.hint, 10, 14);
+    ctx.font = 'bold 15px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(`나 ${myWins} : ${oppWins} 상대`, CANVAS_W / 2, 14);
+    ctx.font = '13px monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText(def.name, CANVAS_W - 44, 14);
     ctx.textAlign = 'left';
   }
 
@@ -315,7 +349,7 @@ export class PvpMatch {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     const n = Math.ceil(this.countdown);
-    ctx.fillText(n > 0 ? String(n) : '파이트!', CANVAS_W / 2, CANVAS_H / 2);
+    ctx.fillText(n > 0 ? String(n) : '출발!', CANVAS_W / 2, CANVAS_H / 2);
   }
 
   _drawRoundEnd(ctx) {
@@ -325,7 +359,7 @@ export class PvpMatch {
     ctx.font = 'bold 32px monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    const text = this.phase === 'ROUND_END_WAIT' ? '판정 중...' : this.roundLoser === this.side ? '라운드 패배' : '라운드 승리';
+    const text = this.phase === 'ROUND_END_WAIT' ? '판정 중...' : this.roundLoser === this.side ? '2등 도착...' : '1등 도착!';
     ctx.fillText(text, CANVAS_W / 2, CANVAS_H / 2);
   }
 
@@ -354,7 +388,7 @@ export class PvpMatch {
       this.platforms = [];
       this.myPlayer = null;
       this.oppPlayer = null;
-      this.net.joinQueue();
+      this.net.joinQueue('jumprace');
       this.phase = 'QUEUE';
     });
     this.addButton(ctx, CANVAS_W / 2 + 30, CANVAS_H / 2, 200, 46, '메인 메뉴', () => {

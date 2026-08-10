@@ -86,7 +86,7 @@ export class Player {
     if (this.inWater) this.crouching = false;
 
     if (!this.inWater) {
-      const wantsCrouch = input.isDown('ControlLeft') || input.isDown('ControlRight');
+      const wantsCrouch = input.isDown('ControlLeft') || input.isDown('ControlRight') || input.isDown('ArrowDown');
       let shouldCrouch = wantsCrouch && this.onGround;
       if (this.crouching && !shouldCrouch) {
         const standBox = { x: this.x, y: this.y + this.h - PLAYER_H, w: this.w, h: PLAYER_H };
@@ -122,7 +122,7 @@ export class Player {
         else this.vx -= Math.sign(this.vx) * fric;
       }
 
-      if (input.pressed('Space')) {
+      if (input.pressed('Space') || input.pressed('ArrowUp')) {
         if (this.inWater) {
           this.vy = -SWIM_IMPULSE;
           this.onGround = false;

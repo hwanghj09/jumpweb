@@ -294,7 +294,13 @@ node server.js                 # ws://localhost:8080/ws, http://localhost:8080/a
 
 ## 상수 동기화 주의
 
-`server.js` 상단의 `MAP_COUNT`, `ROUND_WINS`는 각각 `js/constants.js`의 `PVP_ARENA_COUNT`, `PVP_ROUND_WINS`와 반드시 같아야 합니다. `js/pvpMaps.js`의 아레나를 추가/삭제하면 여기도 같이 수정하세요.
+`server.js` 상단의 값들은 클라이언트 쪽 정의와 반드시 같아야 합니다:
+
+- `PVP_MAP_COUNT` ↔ `js/constants.js`의 `PVP_ARENA_COUNT` (= `js/pvpMaps.js`의 `PVP_ARENAS.length`)
+- `JUMPMAP_STAGE_COUNT` ↔ `js/levels.js`의 `STAGES.length` (멀티 점프맵 경주가 고르는 스테이지 개수)
+- `ROUND_WINS` ↔ `js/constants.js`의 `PVP_ROUND_WINS` (두 모드 모두 3선승제 기준으로 공유)
+
+`js/pvpMaps.js`의 아레나나 `js/levels.js`의 STAGES를 추가/삭제하면 여기 대응하는 값도 같이 수정하세요.
 
 ## 문제 해결
 
