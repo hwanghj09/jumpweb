@@ -23,6 +23,55 @@
 
 ---
 
+## 0-1. ⚠️ 지금 이 코드에 실제로 반영된 배포 방식
+
+위 0번은 "정적 파일 + 백엔드를 한 서버에서 같이 서빙"하는 **일반적인** 구성입니다. 하지만 지금 `js/serverConfig.js`에는 **프론트와 백엔드를 분리하는 구성**이 이미 하드코딩되어 있습니다:
+
+- **프론트(게임 화면)**: GitHub Pages — `.github/workflows/deploy-pages.yml`이 `main` 브랜치에 push될 때마다 `index.html`, `editor.html`, `js/`, `images/`, `custom-stages/`만 골라서 자동 배포합니다 (`server/`는 배포 대상에서 제외됨).
+- **백엔드(멀티플레이/커스텀맵 서버)**: `https://pghs.zstrit.com/sy/` — 이 경로 밑에서 Node 서버가 돈다고 가정하고 클라이언트 코드가 고정되어 있습니다 (`wss://pghs.zstrit.com/sy/ws`, `https://pghs.zstrit.com/sy/api/custom-maps`).
+
+**해야 할 일 두 가지:**
+
+**A. GitHub Pages 켜기**
+1. GitHub 저장소 → Settings → Pages
+2. "Build and deployment" → Source를 **GitHub Actions**로 선택 (기본값인 "Deploy from a branch"가 아님)
+3. `main`에 push하면 Actions 탭에서 `Deploy to GitHub Pages` 워크플로우가 돌고, 끝나면 `https://<GitHub 사용자명>.github.io/<저장소명>/`로 접속 가능
+
+**B. `pghs.zstrit.com` 서버에 백엔드 올리기**
+`pghs.zstrit.com`은 이미 다른 용도로 쓰이고 있을 수 있으니, 아래 1~4번(Node 설치, `server/` 배포, systemd 등록)은 그대로 따라 하되 **nginx는 5번 예시 전체로 덮어쓰지 말고**, 이미 있는 `pghs.zstrit.com` 서버 블록 안에 이 두 `location`만 추가하세요:
+
+```nginx
+    location /sy/ws {
+        proxy_pass http://127.0.0.1:8080/ws;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 60s;
+    }
+
+    location /sy/api/ {
+        proxy_pass http://127.0.0.1:8080/api/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+```
+
+`nginx -t && systemctl reload nginx` 후 확인:
+
+```bash
+curl https://pghs.zstrit.com/sy/api/custom-maps    # []
+```
+
+이 두 `location`만 있으면 되고, `/sy/` 경로에 정적 파일을 놓을 필요는 없습니다 (정적 파일은 GitHub Pages가 서빙). REST API는 이미 `Access-Control-Allow-Origin: *`를 응답하므로 GitHub Pages(다른 도메인)에서 호출해도 CORS 문제가 없습니다.
+
+다른 도메인/경로를 쓰고 싶다면 `js/serverConfig.js`의 `PROD_HTTP_BASE`, `PROD_WS_URL` 두 줄만 바꾸면 됩니다.
+
+> 아래 1~11번은 "정적 파일+백엔드를 한 서버에서 같이 서빙"하는 **대안** 구성 설명입니다. 지금처럼 프론트/백엔드를 분리해서 쓴다면 2~4번(Node 서버 설치·상시 실행)까지는 그대로 따라 하고, 5번 nginx 예시는 위 `location /sy/...` 두 블록으로 대체하면 됩니다.
+
+---
+
 ## 1. 사전 준비
 
 - Linux 서버 한 대 (VPS든 자체 서버든). 아래 명령은 Ubuntu/Debian 기준입니다.

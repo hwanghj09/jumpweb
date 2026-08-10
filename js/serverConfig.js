@@ -1,7 +1,17 @@
 // Shared server-address resolution for both the PvP WebSocket (js/net.js) and
-// the custom-map REST API (js/customServerMaps.js). Override with a query
-// string when testing against a non-default host, e.g.
+// the custom-map REST API (js/customServerMaps.js).
+//
+// The frontend (this static site) and the backend (server/) are hosted
+// separately: the frontend deploys to GitHub Pages while the backend runs on
+// its own server, so "same origin as the page" is NOT a valid assumption in
+// production. The backend address below must match wherever server/ actually
+// runs - see server/README.md.
+//
+// Override with a query string when testing against a different host, e.g.
 // index.html?api=http://192.168.0.5:8080&ws=ws://192.168.0.5:8080/ws
+
+const PROD_HTTP_BASE = 'https://pghs.zstrit.com/sy';
+const PROD_WS_URL = 'wss://pghs.zstrit.com/sy/ws';
 
 function isLocalHost() {
   const host = window.location.hostname;
@@ -13,7 +23,7 @@ export function resolveHttpBase() {
   const override = params.get('api');
   if (override) return override.replace(/\/$/, '');
   if (isLocalHost()) return 'http://localhost:8080';
-  return `${window.location.protocol}//${window.location.host}`;
+  return PROD_HTTP_BASE;
 }
 
 export function resolveWsUrl() {
@@ -21,6 +31,5 @@ export function resolveWsUrl() {
   const override = params.get('ws');
   if (override) return override;
   if (isLocalHost()) return 'ws://localhost:8080/ws';
-  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  return `${proto}://${window.location.host}/ws`;
+  return PROD_WS_URL;
 }
