@@ -18,6 +18,9 @@ import {
   WATER_MAX_FALL_MULT,
   WATER_SPEED,
   SWIM_IMPULSE,
+  PVP_KNOCKBACK_X,
+  PVP_KNOCKBACK_Y,
+  PVP_HITSTUN,
 } from './constants.js';
 import { moveAndCollide, aabbOverlap } from './collision.js';
 
@@ -48,6 +51,16 @@ export class Player {
     this.justJumped = false;
     this.justJabbed = false;
     this.justEnteredWater = false;
+    this.hitstun = 0;
+    this.pushVX = 0;
+  }
+
+  applyKnockback(dir) {
+    this.pushVX = dir * PVP_KNOCKBACK_X;
+    this.vy = -PVP_KNOCKBACK_Y;
+    this.hitstun = PVP_HITSTUN;
+    this.onGround = false;
+    this.crouching = false;
   }
 
   respawn() {
@@ -87,45 +100,51 @@ export class Player {
       }
     }
 
-    let dir = 0;
-    if (input.isDown('ArrowLeft') || input.isDown('KeyA')) dir -= 1;
-    if (input.isDown('ArrowRight') || input.isDown('KeyD')) dir += 1;
-    this.running = !this.crouching && !this.inWater && (input.isDown('ShiftLeft') || input.isDown('ShiftRight'));
-    const maxSpeed = this.inWater ? WATER_SPEED : this.crouching ? CROUCH_SPEED : this.running ? RUN_SPEED : WALK_SPEED;
-    const accel = this.onGround ? ACCEL_GROUND : ACCEL_AIR;
+    if (this.hitstun > 0) {
+      this.hitstun -= dt;
+      this.vx = this.pushVX;
+      this.pushVX *= 0.9;
+    } else {
+      let dir = 0;
+      if (input.isDown('ArrowLeft') || input.isDown('KeyA')) dir -= 1;
+      if (input.isDown('ArrowRight') || input.isDown('KeyD')) dir += 1;
+      this.running = !this.crouching && !this.inWater && (input.isDown('ShiftLeft') || input.isDown('ShiftRight'));
+      const maxSpeed = this.inWater ? WATER_SPEED : this.crouching ? CROUCH_SPEED : this.running ? RUN_SPEED : WALK_SPEED;
+      const accel = this.onGround ? ACCEL_GROUND : ACCEL_AIR;
 
-    if (dir !== 0) {
-      this.facing = dir;
-      this.vx += dir * accel * dt;
-      this.vx = Math.max(-maxSpeed, Math.min(maxSpeed, this.vx));
-    } else if (this.onGround) {
-      const fric = FRICTION * dt;
-      if (Math.abs(this.vx) <= fric) this.vx = 0;
-      else this.vx -= Math.sign(this.vx) * fric;
-    }
-
-    if (input.pressed('Space')) {
-      if (this.inWater) {
-        this.vy = -SWIM_IMPULSE;
-        this.onGround = false;
-        this.justJumped = true;
-      } else if (this.onGround && !this.crouching) {
-        this.vy = -JUMP_VELOCITY;
-        this.onGround = false;
-        this.justJumped = true;
+      if (dir !== 0) {
+        this.facing = dir;
+        this.vx += dir * accel * dt;
+        this.vx = Math.max(-maxSpeed, Math.min(maxSpeed, this.vx));
+      } else if (this.onGround) {
+        const fric = FRICTION * dt;
+        if (Math.abs(this.vx) <= fric) this.vx = 0;
+        else this.vx -= Math.sign(this.vx) * fric;
       }
-    }
 
-    if (input.pressed('KeyX') && this.jabTimer <= 0) {
-      this.jabTimer = JAB_DURATION;
-      this.justJabbed = true;
-    }
-    if (this.jabTimer > 0) {
-      this.jabTimer -= dt;
-      const hb = this.getJabHitbox();
-      for (const e of enemies) {
-        if (e.stunTimer <= 0 && aabbOverlap(hb, e)) {
-          e.applyPush(this.facing);
+      if (input.pressed('Space')) {
+        if (this.inWater) {
+          this.vy = -SWIM_IMPULSE;
+          this.onGround = false;
+          this.justJumped = true;
+        } else if (this.onGround && !this.crouching) {
+          this.vy = -JUMP_VELOCITY;
+          this.onGround = false;
+          this.justJumped = true;
+        }
+      }
+
+      if (input.pressed('KeyX') && this.jabTimer <= 0) {
+        this.jabTimer = JAB_DURATION;
+        this.justJabbed = true;
+      }
+      if (this.jabTimer > 0) {
+        this.jabTimer -= dt;
+        const hb = this.getJabHitbox();
+        for (const e of enemies) {
+          if (e.stunTimer <= 0 && aabbOverlap(hb, e)) {
+            e.applyPush(this.facing);
+          }
         }
       }
     }

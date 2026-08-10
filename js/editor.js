@@ -1,5 +1,6 @@
 import { TILE, PLAYER_W, PLAYER_H, ENEMY_W, ENEMY_H } from './constants.js';
 import { getCustomStageEntries, saveCustomStage, deleteCustomStage } from './customLevels.js';
+import { uploadCustomStage, deleteServerStage, getOwnedUploads, trackOwnedUpload, untrackOwnedUpload } from './customServerMaps.js';
 
 const CONE_W = 24;
 const CONE_H = 28;
@@ -833,6 +834,46 @@ function refreshMapsList() {
   });
 }
 
+function refreshUploadedList() {
+  const ul = document.getElementById('uploaded-list');
+  if (!ul) return;
+  const entries = getOwnedUploads();
+  ul.innerHTML = '';
+  if (!entries.length) {
+    ul.innerHTML = '<li class="legend" style="cursor:default;">아직 업로드한 맵이 없습니다.</li>';
+    return;
+  }
+  entries.forEach((entry) => {
+    const li = document.createElement('li');
+    li.style.cursor = 'default';
+
+    const nameSpan = document.createElement('span');
+    nameSpan.textContent = entry.name;
+    nameSpan.style.flex = '1';
+    nameSpan.style.overflow = 'hidden';
+    nameSpan.style.textOverflow = 'ellipsis';
+    li.appendChild(nameSpan);
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'del-btn';
+    delBtn.textContent = '✕';
+    delBtn.title = '서버에서 삭제';
+    delBtn.addEventListener('click', async () => {
+      if (!confirm(`서버에 올린 "${entry.name}" 맵을 삭제할까요? 다른 사람도 더 이상 플레이할 수 없게 됩니다.`)) return;
+      try {
+        await deleteServerStage(entry.id, entry.ownerToken);
+        untrackOwnedUpload(entry.id);
+        refreshUploadedList();
+        setStatus('서버에서 삭제했습니다.');
+      } catch (err) {
+        setStatus(`삭제 실패: ${err.message}`);
+      }
+    });
+    li.appendChild(delBtn);
+    ul.appendChild(li);
+  });
+}
+
 function updateEditingLabel() {
   const label = document.getElementById('editing-label');
   document.getElementById('btn-delete-map').disabled = !editingId;
@@ -1014,6 +1055,19 @@ document.getElementById('btn-delete-map').addEventListener('click', () => {
   setStatus('삭제했습니다.');
 });
 
+document.getElementById('btn-upload-map').addEventListener('click', async () => {
+  const clean = sanitizeStageForSave(stage);
+  setStatus('서버에 업로드하는 중...');
+  try {
+    const { id, ownerToken } = await uploadCustomStage(clean);
+    trackOwnedUpload(id, ownerToken, clean.name);
+    refreshUploadedList();
+    setStatus(`"${clean.name}"을 서버에 업로드했습니다. 게임의 '커스텀 맵'에서 다른 사람도 플레이할 수 있습니다.`);
+  } catch (err) {
+    setStatus(`업로드 실패: ${err.message}`);
+  }
+});
+
 document.getElementById('btn-gen-code').addEventListener('click', () => {
   const code = `${stageToCode(sanitizeStageForSave(stage))},`;
   document.getElementById('export-code').value = code;
@@ -1087,6 +1141,7 @@ document.getElementById('btn-export-all').addEventListener('click', () => {
 syncMetaInputs();
 resizeCanvas();
 refreshMapsList();
+refreshUploadedList();
 updateEditingLabel();
 renderPropPanel();
 render();

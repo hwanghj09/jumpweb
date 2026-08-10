@@ -119,14 +119,14 @@
   button.primary:hover { background: #34825d; }
   button:disabled { opacity: 0.4; cursor: not-allowed; }
   .btn-col { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
-  #maps-list {
+  #maps-list, #uploaded-list {
     list-style: none;
     margin: 8px 0 0;
     padding: 0;
     max-height: 140px;
     overflow-y: auto;
   }
-  #maps-list li {
+  #maps-list li, #uploaded-list li {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -137,7 +137,7 @@
   }
   #maps-list li:hover { background: #2b2f3d; }
   #maps-list li.active { background: #33406b; }
-  #maps-list .del-btn {
+  #maps-list .del-btn, #uploaded-list .del-btn {
     color: #ff8a8a;
     font-size: 11px;
     padding: 2px 6px;
@@ -246,6 +246,18 @@
         <button id="btn-save-map" class="primary">저장 (게임에서 바로 플레이 가능)</button>
         <button id="btn-delete-map" class="danger" disabled>이 맵 삭제</button>
       </div>
+    </section>
+
+    <section>
+      <h2>커스텀 맵 서버에 공유</h2>
+      <div class="legend hint">
+        업로드하면 이 맵이 서버에 저장되어 다른 사람도 게임의 '커스텀 맵' 메뉴에서 바로 플레이할 수 있습니다. 일반 스테이지와는 별도로 관리됩니다.
+      </div>
+      <div class="btn-col">
+        <button id="btn-upload-map" class="primary">서버에 업로드</button>
+      </div>
+      <label style="margin-top:10px;">내가 업로드한 맵</label>
+      <ul id="uploaded-list"></ul>
     </section>
 
     <section>

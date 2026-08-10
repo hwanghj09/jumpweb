@@ -38,3 +38,14 @@ export const ENEMY_LOSE_TIME = 1.5;
 
 export const CANVAS_W = 960;
 export const CANVAS_H = 540;
+
+// --- PvP (versus mode) ---
+export const PVP_ARENA_COUNT = 5;
+export const PVP_ROUND_WINS = 2; // best of 3
+export const PVP_RINGOUT_MARGIN = 160;
+export const PVP_KNOCKBACK_X = 460;
+export const PVP_KNOCKBACK_Y = 260;
+export const PVP_HITSTUN = 0.3;
+export const PVP_STATE_HZ = 30;
+export const PVP_ROUND_END_DELAY = 2.0;
+export const PVP_COUNTDOWN = 3;
