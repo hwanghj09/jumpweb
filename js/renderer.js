@@ -43,7 +43,10 @@ export function drawPlayerSprite(ctx, player, sheet, camera) {
     case 'crouch':
       row = 0;
       frameIndex = 0;
-      heightScale = 0.65;
+      // idle frame has ~16px transparent headroom above the head (out of 192);
+      // scale must stay low enough that the squished head doesn't render above
+      // the crouch hitbox top, or it visually pokes into low tunnel ceilings.
+      heightScale = 0.35;
       break;
     case 'walk':
       row = 1;

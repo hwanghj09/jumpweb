@@ -125,9 +125,10 @@ export class Game {
     const def = this.stages[i];
     this.playingCustom = false;
     this.stageIndex = i;
+    this.enemyDefs = def.enemies;
     this.platforms = def.platforms.map((p) => new Platform(p));
     this.cones = def.cones.map((c) => new Cone(c));
-    this.enemies = def.enemies.map((e) => new Enemy(e));
+    this.enemies = this.enemyDefs.map((e) => new Enemy(e));
     this.water = (def.water || []).map((w) => new Water(w));
     this.player = new Player(def.spawn.x, def.spawn.y);
     this.goal = def.goal;
@@ -147,9 +148,10 @@ export class Game {
     }
     this.playingCustom = true;
     this.customIndex = i;
+    this.enemyDefs = def.enemies;
     this.platforms = def.platforms.map((p) => new Platform(p));
     this.cones = def.cones.map((c) => new Cone(c));
-    this.enemies = def.enemies.map((e) => new Enemy(e));
+    this.enemies = this.enemyDefs.map((e) => new Enemy(e));
     this.water = (def.water || []).map((w) => new Water(w));
     this.player = new Player(def.spawn.x, def.spawn.y);
     this.goal = def.goal;
@@ -167,6 +169,7 @@ export class Game {
     spawnBurst(this.particles, cx, cy);
     music.playDeathSfx();
     this.player.respawn();
+    this.enemies = this.enemyDefs.map((e) => new Enemy(e));
     this.camera.snap(this.player, this.levelW, this.levelH);
   }
 
