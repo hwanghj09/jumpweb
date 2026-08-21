@@ -35,6 +35,7 @@ let dragCurrentCell = null;
 let mouseCell = { col: 0, row: 0 };
 let statusTimer = null;
 let movingAxis = 'x';
+let movingDirection = 1;
 let undoStack = [];
 let redoStack = [];
 let moveDragSnapshotted = false;
@@ -384,7 +385,7 @@ function onMouseUp() {
     } else if (tool === 'water') {
       stage.water.push({ x: rect.x, y: rect.y, w: rect.w, h: rect.h });
     } else if (tool === 'moving') {
-      stage.platforms.push({ x: rect.x, y: rect.y, w: rect.w, h: rect.h, moving: { axis: movingAxis, range: 2 * TILE, speed: 1 } });
+      stage.platforms.push({ x: rect.x, y: rect.y, w: rect.w, h: rect.h, moving: { axis: movingAxis, range: 2 * TILE, speed: 1, direction: movingDirection } });
     }
   }
   if (dragMode === 'move') renderPropPanel();
@@ -404,20 +405,55 @@ function strokeSelection(x, y, w, h) {
   ctx.restore();
 }
 
-function drawAxisArrow(cx, cy, axis) {
+function directionLabel(axis, direction) {
+  if (axis === 'y') return direction === -1 ? '↑ 위로 시작' : '↓ 아래로 시작';
+  return direction === -1 ? '← 왼쪽으로 시작' : '→ 오른쪽으로 시작';
+}
+
+function drawAxisArrow(cx, cy, axis, direction = 1) {
   ctx.fillStyle = '#2b6cb0';
   ctx.beginPath();
   if (axis === 'x') {
-    ctx.moveTo(cx - 8, cy);
-    ctx.lineTo(cx + 8, cy - 6);
-    ctx.lineTo(cx + 8, cy + 6);
+    const tip = 8 * direction;
+    ctx.moveTo(cx - tip, cy);
+    ctx.lineTo(cx + tip, cy - 6);
+    ctx.lineTo(cx + tip, cy + 6);
   } else {
-    ctx.moveTo(cx, cy - 8);
-    ctx.lineTo(cx - 6, cy + 8);
-    ctx.lineTo(cx + 6, cy + 8);
+    const tip = 8 * direction;
+    ctx.moveTo(cx, cy - tip);
+    ctx.lineTo(cx - 6, cy + tip);
+    ctx.lineTo(cx + 6, cy + tip);
   }
   ctx.closePath();
   ctx.fill();
+}
+
+function drawMovingRangeIndicator(x, y, w, h, moving) {
+  const midX = x + w / 2;
+  const midY = y + h / 2;
+  ctx.strokeStyle = 'rgba(90,200,255,0.9)';
+  ctx.setLineDash([4, 3]);
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  if (moving.axis === 'x') {
+    ctx.moveTo(midX - moving.range, midY);
+    ctx.lineTo(midX + moving.range, midY);
+  } else {
+    ctx.moveTo(midX, midY - moving.range);
+    ctx.lineTo(midX, midY + moving.range);
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = 'rgba(90,200,255,0.9)';
+  if (moving.axis === 'x') {
+    [midX - moving.range, midX + moving.range].forEach((px) => {
+      ctx.fillRect(px - 1, midY - 6, 2, 12);
+    });
+  } else {
+    [midY - moving.range, midY + moving.range].forEach((py) => {
+      ctx.fillRect(midX - 6, py - 1, 12, 2);
+    });
+  }
 }
 
 function drawPlatformBox(p, sel) {
@@ -426,7 +462,10 @@ function drawPlatformBox(p, sel) {
   ctx.strokeStyle = '#5c5c5c';
   ctx.lineWidth = 2;
   ctx.strokeRect(p.x + 1, p.y + 1, p.w - 2, p.h - 2);
-  if (p.moving) drawAxisArrow(p.x + p.w / 2, p.y + p.h / 2, p.moving.axis);
+  if (p.moving) {
+    drawMovingRangeIndicator(p.x, p.y, p.w, p.h, p.moving);
+    drawAxisArrow(p.x + p.w / 2, p.y + p.h / 2, p.moving.axis, p.moving.direction || 1);
+  }
   if (sel) strokeSelection(p.x, p.y, p.w, p.h);
 }
 
@@ -514,7 +553,10 @@ function drawPreview() {
     ctx.strokeStyle = '#ffe14d';
     ctx.lineWidth = 2;
     ctx.strokeRect(r.x, r.y, r.w, r.h);
-    if (tool === 'moving') drawAxisArrow(r.x + r.w / 2, r.y + r.h / 2, movingAxis);
+    if (tool === 'moving') {
+      drawMovingRangeIndicator(r.x, r.y, r.w, r.h, { axis: movingAxis, range: 2 * TILE });
+      drawAxisArrow(r.x + r.w / 2, r.y + r.h / 2, movingAxis, movingDirection);
+    }
     return;
   }
   if (dragMode === 'move') return;
@@ -586,6 +628,11 @@ function renderPropPanel() {
         </select>
         <label>범위 (타일)</label><input type="number" id="p-range" step="0.1" value="${obj.moving ? obj.moving.range / TILE : 2}">
         <label>속도</label><input type="number" id="p-speed" step="0.1" value="${obj.moving ? obj.moving.speed : 1}">
+        <label>시작 방향</label>
+        <select id="p-direction">
+          <option value="1" ${!obj.moving || obj.moving.direction !== -1 ? 'selected' : ''}>${directionLabel(obj.moving ? obj.moving.axis : 'x', 1)}</option>
+          <option value="-1" ${obj.moving && obj.moving.direction === -1 ? 'selected' : ''}>${directionLabel(obj.moving ? obj.moving.axis : 'x', -1)}</option>
+        </select>
       </div>` : ''}
       <div class="btn-col"><button id="p-delete" class="danger">삭제</button></div>
     `;
@@ -604,7 +651,7 @@ function renderPropPanel() {
       movingCb.addEventListener('change', () => {
         pushUndo();
         if (movingCb.checked) {
-          obj.moving = obj.moving || { axis: 'x', range: 2 * TILE, speed: 1 };
+          obj.moving = obj.moving || { axis: 'x', range: 2 * TILE, speed: 1, direction: 1 };
           fields.style.display = '';
         } else {
           delete obj.moving;
@@ -618,11 +665,21 @@ function renderPropPanel() {
         obj.moving.axis = document.getElementById('p-axis').value;
         obj.moving.range = Number(document.getElementById('p-range').value) * TILE;
         obj.moving.speed = Number(document.getElementById('p-speed').value);
+        obj.moving.direction = Number(document.getElementById('p-direction').value);
+        render();
       };
-      ['p-axis', 'p-range', 'p-speed'].forEach((id) => {
+      ['p-range', 'p-speed', 'p-direction'].forEach((id) => {
         const el = document.getElementById(id);
         if (el) el.addEventListener('change', applyMoving);
       });
+      const axisEl = document.getElementById('p-axis');
+      if (axisEl) {
+        axisEl.addEventListener('change', () => {
+          applyMoving();
+          renderPropPanel();
+          render();
+        });
+      }
     }
     document.getElementById('p-delete').addEventListener('click', deleteSelected);
   } else if (kind === 'cone') {
@@ -711,7 +768,7 @@ function sanitizeStageForSave(s) {
       y: p.y,
       w: p.w,
       h: p.h,
-      ...(p.moving ? { moving: { axis: p.moving.axis, range: p.moving.range, speed: p.moving.speed } } : {}),
+      ...(p.moving ? { moving: { axis: p.moving.axis, range: p.moving.range, speed: p.moving.speed, direction: p.moving.direction || 1 } } : {}),
     })),
     cones: s.cones.map((c) => ({ x: c.x, y: c.y })),
     enemies: s.enemies.map((e) => ({ x: e.x, y: e.y, patrolMinX: e.patrolMinX, patrolMaxX: e.patrolMaxX })),
@@ -745,7 +802,7 @@ function stageToCode(s) {
     .map((p) => {
       const base = `{ x: ${numExpr(p.x)}, y: ${numExpr(p.y)}, w: ${numExpr(p.w)}, h: ${numExpr(p.h)}`;
       if (p.moving) {
-        return `${base}, moving: { axis: '${p.moving.axis}', range: ${numExpr(p.moving.range)}, speed: ${p.moving.speed} } }`;
+        return `${base}, moving: { axis: '${p.moving.axis}', range: ${numExpr(p.moving.range)}, speed: ${p.moving.speed}, direction: ${p.moving.direction || 1} } }`;
       }
       return `${base} }`;
     })
@@ -991,14 +1048,32 @@ document.querySelectorAll('.tool-btn').forEach((btn) => {
   btn.addEventListener('click', () => selectTool(btn.dataset.tool));
 });
 
+function updateDirBtnLabels() {
+  document.querySelectorAll('.dir-btn').forEach((b) => {
+    b.textContent = directionLabel(movingAxis, Number(b.dataset.direction));
+  });
+}
+
 document.querySelectorAll('.axis-btn').forEach((btn) => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.axis-btn').forEach((b) => b.classList.remove('active'));
     btn.classList.add('active');
     movingAxis = btn.dataset.axis;
+    updateDirBtnLabels();
     render();
   });
 });
+
+document.querySelectorAll('.dir-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.dir-btn').forEach((b) => b.classList.remove('active'));
+    btn.classList.add('active');
+    movingDirection = Number(btn.dataset.direction);
+    render();
+  });
+});
+
+updateDirBtnLabels();
 
 document.getElementById('zoom-select').addEventListener('change', (e) => {
   zoom = Number(e.target.value);
@@ -1036,6 +1111,13 @@ document.getElementById('btn-new-map').addEventListener('click', () => {
   if (!confirm('현재 편집 중인 맵 내용을 지우고 새 맵을 시작할까요? 저장하지 않은 변경사항은 사라집니다.')) return;
   resetToNewStage();
   setStatus('새 맵을 시작했습니다.');
+});
+
+document.getElementById('btn-test-play').addEventListener('click', () => {
+  const cleanStage = sanitizeStageForSave(stage);
+  localStorage.setItem('jumpweb_test_stage', JSON.stringify(cleanStage));
+  window.open('index.html?test=1', '_blank');
+  setStatus('테스트 플레이를 새 탭에서 시작합니다 (저장되지 않음).');
 });
 
 document.getElementById('btn-save-map').addEventListener('click', () => {

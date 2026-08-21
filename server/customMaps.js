@@ -73,7 +73,7 @@ function sanitizeStage(stage) {
       w: p.w,
       h: p.h,
       ...(p.moving && isFiniteNum(p.moving.range) && isFiniteNum(p.moving.speed) && (p.moving.axis === 'x' || p.moving.axis === 'y')
-        ? { moving: { axis: p.moving.axis, range: p.moving.range, speed: p.moving.speed } }
+        ? { moving: { axis: p.moving.axis, range: p.moving.range, speed: p.moving.speed, direction: p.moving.direction === -1 ? -1 : 1 } }
         : {}),
     })),
     cones: (stage.cones || []).map((c) => ({ x: c.x, y: c.y })),

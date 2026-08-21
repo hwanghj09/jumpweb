@@ -15,7 +15,7 @@ export class Platform {
     if (!this.moving) return;
     const prevX = this.x;
     const prevY = this.y;
-    const offset = Math.sin(t * this.moving.speed + (this.moving.phase || 0)) * this.moving.range;
+    const offset = Math.sin(t * this.moving.speed + (this.moving.phase || 0)) * this.moving.range * (this.moving.direction || 1);
     if (this.moving.axis === 'x') this.x = this.baseX + offset;
     else this.y = this.baseY + offset;
     this.dx = this.x - prevX;

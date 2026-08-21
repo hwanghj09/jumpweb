@@ -40,6 +40,7 @@ export class Game {
     this.customIndex = 0;
     this.customPage = 0;
     this.playingCustom = false;
+    this.testMode = false;
     this.refreshCustomMaps();
     refreshFolderStages().then(() => this.refreshCustomMaps());
     refreshServerCustomStages().then(() => this.refreshCustomMaps());
@@ -60,6 +61,18 @@ export class Game {
     this.pvp = null;
     this.jumpRace = null;
     this.settingsReturnState = 'PAUSED';
+
+    this.tryLoadTestStage();
+  }
+
+  tryLoadTestStage() {
+    if (new URLSearchParams(window.location.search).get('test') !== '1') return;
+    const raw = localStorage.getItem('jumpweb_test_stage');
+    localStorage.removeItem('jumpweb_test_stage');
+    if (!raw) return;
+    try {
+      this.loadTestStage(JSON.parse(raw));
+    } catch {}
   }
 
   startPvp() {
@@ -121,10 +134,7 @@ export class Game {
     }
   }
 
-  loadStage(i) {
-    const def = this.stages[i];
-    this.playingCustom = false;
-    this.stageIndex = i;
+  enterLevel(def) {
     this.enemyDefs = def.enemies;
     this.platforms = def.platforms.map((p) => new Platform(p));
     this.cones = def.cones.map((c) => new Cone(c));
@@ -140,6 +150,14 @@ export class Game {
     music.switchTrack(GAME_TRACK);
   }
 
+  loadStage(i) {
+    const def = this.stages[i];
+    this.playingCustom = false;
+    this.testMode = false;
+    this.stageIndex = i;
+    this.enterLevel(def);
+  }
+
   loadCustomStage(i) {
     const def = this.customMaps[i];
     if (!def) {
@@ -147,20 +165,16 @@ export class Game {
       return;
     }
     this.playingCustom = true;
+    this.testMode = false;
     this.customIndex = i;
-    this.enemyDefs = def.enemies;
-    this.platforms = def.platforms.map((p) => new Platform(p));
-    this.cones = def.cones.map((c) => new Cone(c));
-    this.enemies = this.enemyDefs.map((e) => new Enemy(e));
-    this.water = (def.water || []).map((w) => new Water(w));
-    this.player = new Player(def.spawn.x, def.spawn.y);
-    this.goal = def.goal;
-    this.levelW = def.width;
-    this.levelH = def.height;
-    this.camera.snap(this.player, this.levelW, this.levelH);
-    this.particles = [];
-    this.state = 'PLAYING';
-    music.switchTrack(GAME_TRACK);
+    this.enterLevel(def);
+  }
+
+  loadTestStage(def) {
+    this.playingCustom = true;
+    this.testMode = true;
+    this.testStageDef = def;
+    this.enterLevel(def);
   }
 
   respawnPlayer() {
@@ -303,7 +317,11 @@ export class Game {
     for (const e of this.enemies) drawEnemySprite(ctx, e, enemySheet, this.camera);
     drawPlayerSprite(ctx, this.player, playerSheet, this.camera);
     drawParticles(ctx, this.particles, this.camera);
-    const meta = this.playingCustom ? this.customMaps[this.customIndex] : this.stages[this.stageIndex];
+    const meta = this.testMode
+      ? this.testStageDef
+      : this.playingCustom
+        ? this.customMaps[this.customIndex]
+        : this.stages[this.stageIndex];
     drawHUD(ctx, meta.hint, meta.name);
   }
 
@@ -481,15 +499,27 @@ export class Game {
     this.addButton(ctx, CANVAS_W / 2 - 110, 205, 220, 44, '계속하기', () => {
       this.state = 'PLAYING';
     });
-    this.addButton(ctx, CANVAS_W / 2 - 110, 258, 220, 44, '스테이지 재시작', () =>
-      this.playingCustom ? this.loadCustomStage(this.customIndex) : this.loadStage(this.stageIndex)
-    );
+    this.addButton(ctx, CANVAS_W / 2 - 110, 258, 220, 44, '스테이지 재시작', () => {
+      if (this.testMode) this.loadTestStage(this.testStageDef);
+      else if (this.playingCustom) this.loadCustomStage(this.customIndex);
+      else this.loadStage(this.stageIndex);
+    });
     this.addButton(ctx, CANVAS_W / 2 - 110, 311, 220, 44, '설정', () => {
       this.settingsReturnState = 'PAUSED';
       this.state = 'SETTINGS';
     });
-    this.addButton(ctx, CANVAS_W / 2 - 110, 364, 220, 44, this.playingCustom ? '커스텀 맵 목록' : '스테이지 선택', () =>
-      this.playingCustom ? this.goToCustomSelect() : this.goToStageSelect()
+    this.addButton(
+      ctx,
+      CANVAS_W / 2 - 110,
+      364,
+      220,
+      44,
+      this.testMode ? '에디터로 돌아가기' : this.playingCustom ? '커스텀 맵 목록' : '스테이지 선택',
+      () => {
+        if (this.testMode) window.location.href = 'editor.html';
+        else if (this.playingCustom) this.goToCustomSelect();
+        else this.goToStageSelect();
+      }
     );
   }
 
@@ -629,6 +659,13 @@ export class Game {
     ctx.textBaseline = 'alphabetic';
     ctx.fillText('맵 클리어!', CANVAS_W / 2, 180);
 
+    if (this.testMode) {
+      this.addButton(ctx, CANVAS_W / 2 - 110, 230, 220, 46, '다시하기', () => this.loadTestStage(this.testStageDef));
+      this.addButton(ctx, CANVAS_W / 2 - 110, 288, 220, 46, '에디터로 돌아가기', () => {
+        window.location.href = 'editor.html';
+      });
+      return;
+    }
     const hasNext = this.customIndex + 1 < this.customMaps.length;
     this.addButton(ctx, CANVAS_W / 2 - 110, 230, 220, 46, '다시하기', () => this.loadCustomStage(this.customIndex));
     if (hasNext) {
