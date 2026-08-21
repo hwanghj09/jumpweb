@@ -10,12 +10,22 @@ function resolveAxis(entity, platforms, axis) {
       else if (entity.vx < 0) entity.x = p.x + p.w;
       entity.vx = 0;
     } else {
-      if (entity.vy > 0) {
+      // Resolve toward the side with the smaller penetration rather than by
+      // entity.vy's sign. A moving platform carries the entity via a direct
+      // position offset (see ridingPlatform.dy in player.js), so vy can still
+      // read as "falling" even while the entity is being pushed up into a
+      // platform above — with the old vy-sign check that misread as landing
+      // and snapped the entity on top of (through) the block, which is what
+      // looked like a sideways teleport when the next frame's x-resolution
+      // reacted to the now-wrong position.
+      const overlapFromTop = entity.y + entity.h - p.y;
+      const overlapFromBottom = p.y + p.h - entity.y;
+      if (overlapFromTop < overlapFromBottom) {
         entity.y = p.y - entity.h;
         entity.vy = 0;
         entity.onGround = true;
         entity.ridingPlatform = p.moving ? p : null;
-      } else if (entity.vy < 0) {
+      } else {
         entity.y = p.y + p.h;
         entity.vy = 0;
       }
