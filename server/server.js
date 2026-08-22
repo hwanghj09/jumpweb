@@ -8,6 +8,14 @@ const PVP_MAP_COUNT = 5;
 const JUMPMAP_STAGE_COUNT = 14;
 // Must match PVP_ROUND_WINS in js/constants.js.
 const ROUND_WINS = 2;
+// Must match (PVP_ROUND_END_DELAY + PVP_COUNTDOWN) * 1000 in js/constants.js -
+// the minimum wall-clock time between a round ending and the next round's
+// gameplay actually starting client-side. finishRound() uses this to re-arm
+// room.roundActive on a delay instead of immediately: re-arming right away
+// (in the same synchronous call) would reopen the guard before a second,
+// near-simultaneous finish/ringout for the round that just ended has been
+// processed, defeating the guard entirely.
+const ROUND_TRANSITION_MS = 5000;
 
 const MODES = ['pvp', 'jumprace'];
 
@@ -114,7 +122,9 @@ function finishRound(room, winnerSide) {
   send(room.p1.ws, 'round_result', payload);
   send(room.p2.ws, 'round_result', payload);
   if (matchOver) endRoom(room);
-  else room.roundActive = true;
+  else setTimeout(() => {
+    if (!room.over) room.roundActive = true;
+  }, ROUND_TRANSITION_MS);
 }
 
 function handleMessage(client, msg) {

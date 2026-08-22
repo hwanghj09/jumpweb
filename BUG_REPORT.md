@@ -126,19 +126,44 @@ function finishRound(room, winnerSide) {
 ### 영향 범위
 PvP·점프레이스 온라인 대전 전체. 네트워크 지연이 있거나 두 플레이어의 실력이 비슷해 도착/링아웃 시점이 근접할수록 발생 빈도가 높아짐.
 
-### 제안 해결 방안
-라운드 단위 플래그를 추가해 최초 1건만 통과시킨다.
+### 제안 해결 방안 (최초안 → 테스트로 반증됨 → 수정)
+최초안은 라운드 단위 플래그를 추가해 최초 1건만 통과시키고, `matchOver`가 아니면 같은 호출 안에서 바로 `room.roundActive = true`로 되돌리는 방식이었다:
 ```js
 function finishRound(room, winnerSide) {
   if (!room || room.over || !room.roundActive) return;
   room.roundActive = false;
   ...
+  if (matchOver) endRoom(room);
+  else room.roundActive = true;   // 문제: 같은 동기 호출 안에서 즉시 재개방
 }
 ```
-`createRoom`과 다음 라운드 시작 시점(클라이언트에 `round_result` 전송 후 다음 카운트다운 시작 등)에 `room.roundActive = true`로 재설정.
+그러나 실제로 두 클라이언트의 `finish`를 연속으로 보내는 통합 테스트를 돌려보니 이 버전도 여전히 이중 채점을 통과시켰다. 원인은 `room.roundActive = true` 복구가 `finishRound`가 리턴하기 *전에* 동기적으로 일어나, 근접 타이밍의 두 번째 메시지가 처리될 때는 이미 플래그가 다시 열려 있었기 때문(재현: 아래 검증 참고).
+
+클라이언트에는 "다음 라운드 시작"을 서버에 알리는 메시지가 없다(`js/net.js`의 `sendReady()`는 정의만 되어 있고 어디서도 호출되지 않는 죽은 코드, 서버에도 `'ready'` 핸들러 없음). 따라서 플래그를 즉시 되돌리는 대신, 클라이언트가 `round_result` 수신 후 실제로 다음 라운드에 진입하기까지 걸리는 최소 시간(`PVP_ROUND_END_DELAY`(2.0s) + `PVP_COUNTDOWN`(3s) = 5s, `js/constants.js`)만큼 지연 후 재개방하도록 수정했다:
+```js
+// server/server.js
+const ROUND_TRANSITION_MS = 5000; // must match (PVP_ROUND_END_DELAY + PVP_COUNTDOWN) * 1000
+
+function finishRound(room, winnerSide) {
+  if (!room || room.over || !room.roundActive) return;
+  room.roundActive = false;
+  ...
+  if (matchOver) endRoom(room);
+  else setTimeout(() => { if (!room.over) room.roundActive = true; }, ROUND_TRANSITION_MS);
+}
+```
+
+### 검증 (Verification)
+`server/server.js`의 실제 커밋 전 버전(git 히스토리)과 수정본을 각각 별도 포트로 기동해 `ws` 클라이언트 2개로 실제 매치메이킹 → 동시 `finish` 시나리오를 재현하는 통합 테스트를 실행함(임시 스크립트, 검증 후 삭제):
+- 수정 전: 두 클라이언트의 `finish`를 연속 전송 → `round_result`가 2회 브로드캐스트되고 점수가 `{p1:1,p2:0}` → `{p1:1,p2:1}`로 이중 채점됨. **버그 재현 확인**.
+- 수정 후(최종본): 동일한 연속 `finish` → `round_result` 1회만 브로드캐스트(`{p1:1,p2:0}`). 5초 쿨다운 중간에 도착한 낙오 메시지도 무시됨. 쿨다운(5초) 경과 후 보낸 `finish`는 정상적으로 다음 라운드로 채점됨(`{p1:2,p2:0}`). **4개 검증 항목 모두 통과**.
+
+물리 엔진 버그(1, 2)도 동일한 방식으로 검증: 수정 전 코드(git 히스토리)로는 재현되고, 수정 후 코드에서는 해소됨을 Node 스크립트로 직접 확인.
+- 버그 1: `entity.x=95, vx=0`로 발판(`x:100,w:50`)과 겹친 상태에서 `moveAndCollide` 호출 → 수정 전 `entity.x`가 95로 그대로(겹침 유지, 버그 재현) / 수정 후 80으로 보정(통과).
+- 버그 2: 이동 발판(`dx:6`) 위에 있는 `Enemy`로 `update(0, ...)` 호출 → 수정 전 `enemy.x`가 100 그대로(캐리 안 됨, 버그 재현) / 수정 후 106으로 이동(통과).
 
 ### 참고
-`server/server.js:101-159`
+`server/server.js:101-159` (수정 후 `ROUND_TRANSITION_MS` 도입으로 라인 번호 일부 변경)
 
 ---
 
