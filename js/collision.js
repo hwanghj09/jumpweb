@@ -6,8 +6,15 @@ function resolveAxis(entity, platforms, axis) {
   for (const p of platforms) {
     if (!aabbOverlap(entity, p)) continue;
     if (axis === 'x') {
-      if (entity.vx > 0) entity.x = p.x - entity.w;
-      else if (entity.vx < 0) entity.x = p.x + p.w;
+      // Resolve toward the side with the smaller penetration rather than by
+      // entity.vx's sign — a moving platform carries the entity via a direct
+      // position offset (ridingPlatform.dx in player.js/enemy.js), so vx can
+      // be 0 (or read the wrong sign) even while the entity is overlapping
+      // the platform, which left the old sign-check unable to resolve at all.
+      const overlapFromLeft = entity.x + entity.w - p.x;
+      const overlapFromRight = p.x + p.w - entity.x;
+      if (overlapFromLeft < overlapFromRight) entity.x = p.x - entity.w;
+      else entity.x = p.x + p.w;
       entity.vx = 0;
     } else {
       // Resolve toward the side with the smaller penetration rather than by

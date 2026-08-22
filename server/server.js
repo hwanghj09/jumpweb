@@ -72,7 +72,7 @@ function tryMatchmake(mode) {
 function createRoom(a, b, mode) {
   const roomId = nextRoomId++;
   const mapIndex = randomMapIndex(mapCountFor(mode));
-  const room = { id: roomId, kind: mode, p1: a, p2: b, score: { p1: 0, p2: 0 }, mapIndex, over: false };
+  const room = { id: roomId, kind: mode, p1: a, p2: b, score: { p1: 0, p2: 0 }, mapIndex, over: false, roundActive: true };
   rooms.set(roomId, room);
   a.room = room;
   a.side = 'p1';
@@ -99,7 +99,12 @@ function endRoom(room) {
 // both just need to declare a winnerSide and let score/matchOver/next-map
 // bookkeeping happen the same way.
 function finishRound(room, winnerSide) {
-  if (!room || room.over) return;
+  if (!room || room.over || !room.roundActive) return;
+  // Set synchronously before any further work: Node's single-threaded event
+  // loop processes one WS message at a time, so this closes the window where
+  // both players' near-simultaneous finish/ringout messages would otherwise
+  // each pass the guard and double-score the same round.
+  room.roundActive = false;
   const loserSide = winnerSide === 'p1' ? 'p2' : 'p1';
   room.score[winnerSide] += 1;
   const matchOver = room.score[winnerSide] >= ROUND_WINS;
@@ -109,6 +114,7 @@ function finishRound(room, winnerSide) {
   send(room.p1.ws, 'round_result', payload);
   send(room.p2.ws, 'round_result', payload);
   if (matchOver) endRoom(room);
+  else room.roundActive = true;
 }
 
 function handleMessage(client, msg) {

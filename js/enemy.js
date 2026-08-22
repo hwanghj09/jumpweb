@@ -90,6 +90,12 @@ export class Enemy {
 
     this.vy += GRAVITY * dt;
     if (this.vy > MAX_FALL_SPEED) this.vy = MAX_FALL_SPEED;
+
+    if (this.ridingPlatform) {
+      this.x += this.ridingPlatform.dx;
+      this.y += this.ridingPlatform.dy;
+    }
+
     moveAndCollide(this, platforms, dt);
   }
 }
